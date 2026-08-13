@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings as app_config
 from app.crypto import mask_token_id
+from app.security import access_token_configured
 from app.models import GpuStatus, InstanceSettings
 
 RAPIDOCR = "rapidocr"
@@ -124,12 +125,14 @@ def to_out(row: InstanceSettings | None) -> dict:
             "gpu_status": GpuStatus.NOT_CONFIGURED,
             "gpu_endpoint_url": None,
             "gpu_error": None,
+            "access_protected": access_token_configured(),
         }
     return {
         "modal_configured": bool(
             row.modal_token_id and row.modal_token_secret_encrypted
         ),
         "modal_token_id_masked": mask_token_id(row.modal_token_id),
+        "access_protected": access_token_configured(),
         "gpu_status": row.gpu_status,
         "gpu_endpoint_url": row.gpu_endpoint_url,
         "gpu_error": row.gpu_error,

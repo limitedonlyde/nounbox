@@ -13,6 +13,7 @@ from app.crypto import encrypt_secret
 from app.db import get_session
 from app.models import GpuStatus, Job, JobType
 from app.schemas import JobOut, ModalTokenUpdate, SettingsOut
+from app.security import require_access
 from app.services import modal_deploy, settings_store
 
 router = APIRouter(prefix="/settings", tags=["settings"])
@@ -27,7 +28,7 @@ async def get_settings(session: AsyncSession = Depends(get_session)):
     return settings_store.to_out(await settings_store.get_row(session))
 
 
-@router.put("", response_model=SettingsOut)
+@router.put("", response_model=SettingsOut, dependencies=[Depends(require_access)])
 async def put_modal_token(
     body: ModalTokenUpdate, session: AsyncSession = Depends(get_session)
 ):
@@ -50,7 +51,7 @@ async def put_modal_token(
     return settings_store.to_out(row)
 
 
-@router.delete("/modal", response_model=SettingsOut)
+@router.delete("/modal", response_model=SettingsOut, dependencies=[Depends(require_access)])
 async def delete_modal_token(session: AsyncSession = Depends(get_session)):
     row = await settings_store.get_row(session)
     if row is None:
@@ -65,7 +66,7 @@ async def delete_modal_token(session: AsyncSession = Depends(get_session)):
     return settings_store.to_out(row)
 
 
-@router.post("/gpu/deploy", response_model=JobOut, status_code=202)
+@router.post("/gpu/deploy", response_model=JobOut, status_code=202, dependencies=[Depends(require_access)])
 async def deploy_gpu(request: Request, session: AsyncSession = Depends(get_session)):
     """Развернуть GPU-рецепт в аккаунт Modal пользователя. Прогресс — в GET /jobs/{id}."""
     row = await settings_store.get_or_create(session)

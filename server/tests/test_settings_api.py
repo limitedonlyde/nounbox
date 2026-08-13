@@ -16,6 +16,7 @@ async def test_get_settings_defaults(client):
         "gpu_status": "not_configured",
         "gpu_endpoint_url": None,
         "gpu_error": None,
+        "access_protected": False,
     }
 
 
@@ -125,6 +126,7 @@ async def test_delete_modal_clears_token(client, session_factory, token_pair):
         "gpu_status": "not_configured",
         "gpu_endpoint_url": None,
         "gpu_error": None,
+        "access_protected": False,
     }
     async with session_factory() as session:
         row = (await session.execute(select(InstanceSettings))).scalar_one()
@@ -171,3 +173,45 @@ async def test_deploy_creates_job_without_secret_in_payload(
     polled = await client.get(f"/api/v1/jobs/{body['id']}")
     assert polled.status_code == 200
     assert polled.json()["type"] == "deploy_gpu"
+
+
+async def test_mutating_settings_require_token_when_configured(client, monkeypatch):
+    """С заданным APP_ACCESS_TOKEN чужой не впишет свой токен Modal и не
+    запустит деплой за счёт владельца."""
+    from app.config import settings as app_settings
+
+    monkeypatch.setattr(app_settings, "app_access_token", "s3cret-token")
+
+    body = {"modal_token_id": "ak-1234567890abcdef", "modal_token_secret": "as-x"}
+    assert (await client.put("/api/v1/settings", json=body)).status_code == 401
+    assert (await client.delete("/api/v1/settings/modal")).status_code == 401
+    assert (await client.post("/api/v1/settings/gpu/deploy")).status_code == 401
+
+    # чтение состояния остаётся открытым — на нём нет секретов
+    read = await client.get("/api/v1/settings")
+    assert read.status_code == 200
+    assert read.json()["access_protected"] is True
+
+    ok = await client.put(
+        "/api/v1/settings", json=body, headers={"Authorization": "Bearer s3cret-token"}
+    )
+    assert ok.status_code == 200
+
+
+async def test_wrong_token_rejected(client, monkeypatch):
+    from app.config import settings as app_settings
+
+    monkeypatch.setattr(app_settings, "app_access_token", "right")
+
+    response = await client.delete(
+        "/api/v1/settings/modal", headers={"Authorization": "Bearer wrong"}
+    )
+
+    assert response.status_code == 401
+
+
+async def test_open_by_default_but_flagged(client):
+    """Без APP_ACCESS_TOKEN ручки работают как раньше, но UI об этом знает."""
+    response = await client.get("/api/v1/settings")
+
+    assert response.json()["access_protected"] is False

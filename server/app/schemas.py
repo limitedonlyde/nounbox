@@ -201,6 +201,9 @@ class SettingsOut(BaseModel):
     gpu_status: GpuStatus
     gpu_endpoint_url: str | None
     gpu_error: str | None
+    # защищены ли ручки, распоряжающиеся токеном Modal и деплоем; false —
+    # UI показывает предупреждение, а не делает вид, что всё в порядке
+    access_protected: bool = False
 
 
 class ModalTokenUpdate(BaseModel):

@@ -182,6 +182,18 @@ function SettingsPage() {
         </p>
       </section>
 
+      {settings && !settings.access_protected && (
+        <section className="settings-section">
+          <p className="warning">
+            Эти настройки может менять любой, кто имеет доступ к порту API — в
+            том числе вписать свой токен Modal или запустить деплой за ваш счёт.
+            Если платформа доступна кому-то ещё, задайте{" "}
+            <code>APP_ACCESS_TOKEN</code> в <code>.env</code> и перезапустите
+            стек.
+          </p>
+        </section>
+      )}
+
       <section className="settings-section">
         <h2>Токен Modal</h2>
         <p className="muted">

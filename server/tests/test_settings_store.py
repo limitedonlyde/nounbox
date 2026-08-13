@@ -84,6 +84,7 @@ def test_to_out_never_exposes_secret():
         "gpu_status",
         "gpu_endpoint_url",
         "gpu_error",
+        "access_protected",
     }
     assert "encrypted" not in str(out)
     assert "ak-1234567890abcdef" not in str(out)
@@ -98,4 +99,5 @@ def test_to_out_of_missing_row():
         "gpu_status": GpuStatus.NOT_CONFIGURED,
         "gpu_endpoint_url": None,
         "gpu_error": None,
+        "access_protected": False,
     }

@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     # если задан, рецепт закрывает /predict заголовком Bearer, а worker
     # подставляет тот же токен в конфиг движка modal_gpu
     autolabelui_gpu_token: str = ""
+    # Общий токен доступа к ручкам настроек (токен Modal, деплой GPU).
+    # Пусто — ручки открыты, платформа предупреждает об этом.
+    app_access_token: str = ""
 
     @property
     def cors_origin_list(self) -> list[str]:

@@ -63,6 +63,7 @@ export interface Job {
 export type GpuStatus = "not_configured" | "deploying" | "ready" | "failed";
 
 export interface Settings {
+  access_protected: boolean;
   modal_configured: boolean;
   modal_token_id_masked: string | null;
   gpu_status: GpuStatus;
