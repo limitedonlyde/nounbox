@@ -1,22 +1,22 @@
-# Режим разработки. Compose подхватывает этот файл автоматически, поэтому
+# Development mode. Compose picks this file up automatically, so
 #
 #   docker compose up -d --build
 #
-# поднимает стек с dev-сервером Vite, uvicorn --reload и live-кодом.
-# Для релизной конфигурации файл нужно исключить явно:
+# brings the stack up with the Vite dev server, uvicorn --reload and live
+# code. For the release configuration the file must be excluded explicitly:
 #
 #   docker compose -f docker-compose.yml up -d --build
 services:
   minio:
     ports:
-      - "127.0.0.1:9001:9001"  # веб-консоль MinIO — только для разработки
+      - "127.0.0.1:9001:9001"  # MinIO web console — development only
 
   api:
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     environment:
-      PYTHONPATH: /code  # смонтированный код важнее копии в site-packages
+      PYTHONPATH: /code  # the mounted code wins over the site-packages copy
     ports:
-      - "127.0.0.1:8000:8000"  # прямой доступ к API и /docs, минуя nginx
+      - "127.0.0.1:8000:8000"  # direct API and /docs access, bypassing nginx
     volumes:
       - ./server:/code
       - ./sdk:/sdk
@@ -27,7 +27,7 @@ services:
     volumes:
       - ./server:/code
       - ./sdk:/sdk
-      - ./labelers:/labelers  # live-код плагинов (editable install)
+      - ./labelers:/labelers  # live plugin code (editable install)
 
   web:
     build:
@@ -35,13 +35,13 @@ services:
     image: nounbox-web:dev
     environment:
       API_PROXY_TARGET: http://api:8000
-    # !override, а не слияние: иначе к 5173 добавился бы порт 8080 из базового
-    # файла, на котором в dev-режиме никто не слушает
+    # !override rather than merge: otherwise port 8080 from the base file
+    # would be added alongside 5173, and nothing listens on it in dev mode
     ports: !override
       - "127.0.0.1:5173:5173"
     volumes:
       - ./web:/app
-      - /app/node_modules  # изоляция от node_modules хоста (другая платформа)
+      - /app/node_modules  # hides the host node_modules (different platform)
     depends_on:
       api:
-        condition: service_started  # ждать healthcheck в разработке незачем
+        condition: service_started  # no need to wait for the healthcheck in dev

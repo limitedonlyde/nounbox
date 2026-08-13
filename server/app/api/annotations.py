@@ -25,7 +25,7 @@ async def bulk_accept(
     body: BulkAcceptRequest,
     session: AsyncSession = Depends(get_session),
 ):
-    """Принять все pending-аннотации проекта с confidence >= порога."""
+    """Accept all pending annotations in the project with confidence >= threshold."""
     if await session.get(Project, project_id) is None:
         raise HTTPException(404, "Project not found")
     project_images = (
@@ -78,7 +78,7 @@ async def create_annotation(
         confidence=body.confidence,
         parent_id=body.parent_id,
         source=HUMAN_SOURCE,
-        status=AnnotationStatus.ACCEPTED,  # ручная разметка сразу принята
+        status=AnnotationStatus.ACCEPTED,  # manual labeling is accepted right away
     )
     session.add(annotation)
     await session.commit()
@@ -102,7 +102,7 @@ async def update_annotation(
             value = body.geometry.model_dump()
         setattr(annotation, field, value)
 
-    # любая правка человеком -> edited (кроме явной смены только статуса)
+    # any edit by a human -> edited (except an explicit status-only change)
     if updates and set(updates) != {"status"}:
         annotation.status = AnnotationStatus.EDITED
     annotation.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)

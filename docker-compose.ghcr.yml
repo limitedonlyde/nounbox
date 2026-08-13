@@ -35,10 +35,10 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-autolabel}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-autolabel123}
     ports:
-      # Браузер открывает presigned-ссылки на изображения НАПРЯМУЮ: подпись
-      # SigV4 включает хост и путь, поэтому проксировать MinIO под префиксом
-      # нельзя — подпись перестанет сходиться. При деплое не на localhost
-      # выставьте S3_PUBLIC_ENDPOINT_URL на адрес, доступный браузеру.
+      # The browser opens presigned image links DIRECTLY: a SigV4 signature
+      # covers the host and path, so MinIO cannot be proxied under a prefix —
+      # the signature would stop matching. When not deploying on localhost,
+      # point S3_PUBLIC_ENDPOINT_URL at an address the browser can reach.
       - "127.0.0.1:9000:9000"
     volumes:
       - miniodata:/data
@@ -57,11 +57,11 @@ services:
       retries: 10
 
   api:
-    # один и тот же образ у api и worker'а — различаются только командой
+    # api and worker share one image — they differ only in the command
     image: &server-image ghcr.io/${NOUNBOX_OWNER:-limitedonlyde}/nounbox-server:${NOUNBOX_TAG:-latest}
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000
-    # .env необязателен: без него берутся дефолты ниже и из app/config.py.
-    # Он нужен, когда меняются пароли, S3_PUBLIC_ENDPOINT_URL или ключи VLM.
+    # .env is optional: defaults below and in app/config.py apply without it.
+    # It is needed to change passwords, S3_PUBLIC_ENDPOINT_URL or VLM keys.
     env_file:
       - path: .env
         required: false
@@ -70,16 +70,16 @@ services:
       REDIS_URL: redis://redis:6379/0
       S3_ENDPOINT_URL: http://minio:9000
       S3_PUBLIC_ENDPOINT_URL: ${S3_PUBLIC_ENDPOINT_URL:-http://localhost:9000}
-      # ключи S3 должны совпадать с учёткой MinIO выше, иначе загрузка падает
+      # the S3 keys must match the MinIO credentials above, or uploads fail
       S3_ACCESS_KEY: ${S3_ACCESS_KEY:-${MINIO_ROOT_USER:-autolabel}}
       S3_SECRET_KEY: ${S3_SECRET_KEY:-${MINIO_ROOT_PASSWORD:-autolabel123}}
       APP_ACCESS_TOKEN: ${APP_ACCESS_TOKEN:-}
       VLM_BASE_URL: ${VLM_BASE_URL:-http://host.docker.internal:11434/v1}
       VLM_API_KEY: ${VLM_API_KEY:-ollama}
       VLM_MODEL: ${VLM_MODEL:-qwen2.5vl:7b}
-    # порт наружу не публикуется: API доступен браузеру через nginx (/api)
+    # no port published: the browser reaches the API through nginx (/api)
     volumes:
-      - appdata:/data  # ключ шифрования настроек (общий с worker'ом)
+      - appdata:/data  # settings encryption key (shared with the worker)
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
       interval: 10s
@@ -98,15 +98,15 @@ services:
     image: *server-image
     command: arq app.workers.tasks.WorkerSettings
     extra_hosts:
-      # доступ к Ollama/др. сервисам на хосте (Linux; на Mac/Win встроено)
+      # reach Ollama/other host services (Linux; built in on Mac/Windows)
       - "host.docker.internal:host-gateway"
     env_file:
       - path: .env
         required: false
     environment: *backend_env
     volumes:
-      - appdata:/data  # ключ шифрования настроек (общий с api)
-      - ocr-models:/root/.cache  # кеш весов движков (owlv2 ~620МБ), качаются один раз
+      - appdata:/data  # settings encryption key (shared with api)
+      - ocr-models:/root/.cache  # engine weight cache (owlv2 ~620MB), downloaded once
     depends_on:
       postgres:
         condition: service_healthy

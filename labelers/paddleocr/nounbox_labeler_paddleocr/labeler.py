@@ -1,11 +1,11 @@
-"""PaddleOCR labeler: детекция текстовых строк + распознавание.
+"""PaddleOCR labeler: text line detection + recognition.
 
-Поддерживаются оба поколения API PaddleOCR (2.x и 3.x) — выбор по установленной
-мажорной версии. Модели скачиваются при первом predict и кешируются в
-~/.paddleocr (в docker — volume paddleocr-data).
+Both generations of the PaddleOCR API (2.x and 3.x) are supported — the choice
+follows the installed major version. Models are downloaded on the first predict
+and cached in ~/.paddleocr (in docker — the paddleocr-data volume).
 
-Config (передаётся из API / autolabel-задачи):
-    lang: str = "en"   — язык модели ("en", "ch", "ru", ...)
+Config (passed in from the API / the autolabel job):
+    lang: str = "en"   — model language ("en", "ch", "ru", ...)
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ class PaddleOCRLabeler:
         self._engines: dict[str, object] = {}  # lang -> PaddleOCR instance
         self._lock = threading.Lock()
 
-    # --- инициализация движка (лениво, один раз на язык) ---
+    # --- engine initialization (lazily, once per language) ---
 
     def _engine(self, config: dict):
         lang = config.get("lang", "en")
@@ -48,7 +48,7 @@ class PaddleOCRLabeler:
         major = int(pkg_version("paddleocr").split(".", 1)[0])
         logger.info("Loading PaddleOCR %s (lang=%s)...", pkg_version("paddleocr"), lang)
         if major >= 3:
-            # лёгкий пайплайн: без orientation/unwarping-моделей
+            # lightweight pipeline: no orientation/unwarping models
             return PaddleOCR(
                 lang=lang,
                 use_doc_orientation_classify=False,
@@ -57,7 +57,7 @@ class PaddleOCRLabeler:
             )
         return PaddleOCR(lang=lang, use_angle_cls=False, show_log=False)
 
-    # --- SDK-контракт ---
+    # --- SDK contract ---
 
     def predict(self, image: bytes, config: dict) -> list[Annotation]:
         ocr = self._engine(config)
@@ -88,12 +88,12 @@ class PaddleOCRLabeler:
 
     @staticmethod
     def _run_3x(ocr, arr: np.ndarray) -> list[tuple[list, str, float]]:
-        """PaddleOCR 3.x: predict() -> [OCRResult с rec_texts/rec_scores/dt_polys]"""
+        """PaddleOCR 3.x: predict() -> [OCRResult with rec_texts/rec_scores/dt_polys]"""
         results = ocr.predict(input=arr)
         rows = []
         for res in results or []:
             data = res.json if hasattr(res, "json") else res
-            # res.json — dict {"res": {...}} в новых версиях; иначе dict-like сам результат
+            # res.json is {"res": {...}} in newer versions; otherwise res is dict-like
             inner = data.get("res", data) if isinstance(data, dict) else data
             texts = inner["rec_texts"]
             scores = inner["rec_scores"]

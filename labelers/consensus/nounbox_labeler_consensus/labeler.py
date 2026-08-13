@@ -1,14 +1,14 @@
-"""Consensus meta-labeler: реальная уверенность из согласия движков.
+"""Consensus meta-labeler: real confidence out of agreement between engines.
 
-Прогоняет изображение через несколько установленных движков по порядку;
-первый в списке — primary (его геометрия точнее, обычно OCR), остальные
-подтверждают или дополняют. Сведение — merge.merge(): IoU-матчинг
-геометрий + сходство текста -> честный confidence вместо синтетического.
+Runs the image through several installed engines in order; the first one in
+the list is the primary (its geometry is more precise, usually OCR), the rest
+confirm or extend it. Merging happens in merge.merge(): IoU matching of the
+geometries + text similarity -> an honest confidence instead of a synthetic one.
 
 Config:
     engines: [{"name": "paddleocr", "config": {...}}, {"name": "vlm", "config": {...}}]
         default: [{"name": "paddleocr"}, {"name": "vlm"}]
-    iou_threshold: float = 0.4 — порог геометрического совпадения
+    iou_threshold: float = 0.4 — geometric match threshold
 """
 
 from __future__ import annotations
@@ -50,11 +50,11 @@ class ConsensusLabeler:
                 )
             key = engine_name
             suffix = 2
-            while key in annotations_by_engine:  # один движок дважды (разные config)
+            while key in annotations_by_engine:  # same engine, different config
                 key = f"{engine_name}#{suffix}"
                 suffix += 1
-            # общие настройки задачи (classes от платформы, пороги) уходят
-            # каждому движку; явный config движка их перекрывает
+            # the shared task settings (classes from the platform, thresholds)
+            # go to every engine; an engine's explicit config overrides them
             shared = {
                 k: v for k, v in config.items() if k not in ("engines", "iou_threshold")
             }

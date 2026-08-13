@@ -17,7 +17,7 @@ router = APIRouter(tags=["images"])
 async def list_project_images(
     project_id: uuid.UUID, session: AsyncSession = Depends(get_session)
 ):
-    """Все изображения проекта со статистикой аннотаций (для списка/прогресса)."""
+    """All project images with annotation stats (for the list/progress view)."""
     total = func.count(Annotation.id)
     pending = func.count(Annotation.id).filter(
         Annotation.status == AnnotationStatus.PENDING
@@ -63,7 +63,7 @@ async def get_image(image_id: uuid.UUID, session: AsyncSession = Depends(get_ses
 
 @router.get("/images/{image_id}/url")
 async def get_image_url(image_id: uuid.UUID, session: AsyncSession = Depends(get_session)):
-    """Presigned URL для отображения в review UI."""
+    """Presigned URL for display in the review UI."""
     image = await session.get(Image, image_id)
     if image is None:
         raise HTTPException(404, "Image not found")
@@ -77,11 +77,11 @@ async def update_image(
     body: ImageUpdate,
     session: AsyncSession = Depends(get_session),
 ):
-    """Пометить кадр просмотренным.
+    """Mark a frame as reviewed.
 
-    Единственный способ сказать «я смотрел, объектов тут нет»: у такого кадра
-    нет ни одной аннотации, поэтому иначе он неотличим от неразмеченного и в
-    датасет как фоновый пример не попадёт.
+    The only way to say "I looked, there are no objects here": such a frame has
+    no annotations at all, so otherwise it is indistinguishable from an
+    unlabeled one and will never reach the dataset as a background example.
     """
     image = await session.get(Image, image_id)
     if image is None:

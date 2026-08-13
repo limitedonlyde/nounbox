@@ -1,4 +1,4 @@
-"""Ручки настроек: секрет не утекает, токен маскируется, deploy ставит Job."""
+"""Settings endpoints: no secret leaks, the token is masked, deploy queues a Job."""
 
 from sqlalchemy import select
 
@@ -32,7 +32,7 @@ async def test_put_token_masks_id_and_hides_secret(client, session_factory, toke
     assert body["modal_configured"] is True
     assert body["modal_token_id_masked"] == f"{token_id[:7]}...{token_id[-4:]}"
     assert body["gpu_status"] == "not_configured"
-    # секрет не должен встречаться в ответе ни в каком виде
+    # the secret must not show up in the response in any form
     assert token_secret not in response.text
     assert "modal_token_secret" not in body
 
@@ -169,15 +169,15 @@ async def test_deploy_creates_job_without_secret_in_payload(
     assert token_secret not in str(job.payload)
     assert row.gpu_status == GpuStatus.DEPLOYING
 
-    # прогресс поллится обычной ручкой задач
+    # progress is polled through the ordinary jobs endpoint
     polled = await client.get(f"/api/v1/jobs/{body['id']}")
     assert polled.status_code == 200
     assert polled.json()["type"] == "deploy_gpu"
 
 
 async def test_mutating_settings_require_token_when_configured(client, monkeypatch):
-    """С заданным APP_ACCESS_TOKEN чужой не впишет свой токен Modal и не
-    запустит деплой за счёт владельца."""
+    """With APP_ACCESS_TOKEN set, a stranger cannot write in their own Modal token
+    and cannot start a deploy at the owner's expense."""
     from app.config import settings as app_settings
 
     monkeypatch.setattr(app_settings, "app_access_token", "s3cret-token")
@@ -187,7 +187,7 @@ async def test_mutating_settings_require_token_when_configured(client, monkeypat
     assert (await client.delete("/api/v1/settings/modal")).status_code == 401
     assert (await client.post("/api/v1/settings/gpu/deploy")).status_code == 401
 
-    # чтение состояния остаётся открытым — на нём нет секретов
+    # reading the state stays open — there are no secrets in it
     read = await client.get("/api/v1/settings")
     assert read.status_code == 200
     assert read.json()["access_protected"] is True
@@ -211,7 +211,7 @@ async def test_wrong_token_rejected(client, monkeypatch):
 
 
 async def test_open_by_default_but_flagged(client):
-    """Без APP_ACCESS_TOKEN ручки работают как раньше, но UI об этом знает."""
+    """Without APP_ACCESS_TOKEN the endpoints work as before, but the UI knows it."""
     response = await client.get("/api/v1/settings")
 
     assert response.json()["access_protected"] is False

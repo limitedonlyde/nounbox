@@ -77,7 +77,7 @@ function ProjectPage() {
     setProject(p);
     setImages(imgs);
     setClasses(cls);
-    // пороги подставляем один раз — дальше значение принадлежит пользователю
+    // fill the thresholds in once — after that the value belongs to the user
     if (!defaultsApplied.current) {
       defaultsApplied.current = true;
       setAcceptThreshold(DEFAULT_ACCEPT_THRESHOLD[p.task_type]);
@@ -92,7 +92,7 @@ function ProjectPage() {
     (jobId: string) => {
       setBusy(true);
       stopPoll();
-      // одиночный сбой сети не должен убивать опрос: считаем промахи подряд
+      // a single network blip must not kill the poll: count misses in a row
       let misses = 0;
       pollRef.current = window.setInterval(async () => {
         try {
@@ -123,9 +123,9 @@ function ProjectPage() {
     [stopPoll, load]
   );
 
-  // подхватываем незавершённую задачу при открытии страницы: вкладку могли
-  // перезагрузить, усыпить или потерять сеть — без этого интерфейс навсегда
-  // застревает на «Autolabel запущен...», хотя работа идёт и завершается
+  // pick up an unfinished job when the page opens: the tab may have been
+  // reloaded, put to sleep or lost the network — without this the interface
+  // stays stuck on "Autolabel started..." forever, while the work runs and ends
   useEffect(() => {
     let alive = true;
     api
@@ -156,13 +156,13 @@ function ProjectPage() {
     };
   }, []);
 
-  // движки, подходящие типу задачи проекта
+  // engines that fit the project's task type
   const taskLabelers = useMemo(
     () => labelers.filter((l) => labelerSupportsTask(l, taskType)),
     [labelers, taskType]
   );
 
-  // дефолт движка: owlv2 для detection, rapidocr для ocr
+  // default engine: owlv2 for detection, rapidocr for ocr
   useEffect(() => {
     if (taskLabelers.length === 0) return;
     setEngine((current) => {
@@ -177,7 +177,7 @@ function ProjectPage() {
     });
   }, [taskLabelers, taskType]);
 
-  // форматы экспорта зависят от типа задачи
+  // export formats depend on the task type
   const exportFormats = EXPORT_FORMATS[taskType];
   useEffect(() => {
     setExportFormat((current) =>
@@ -200,7 +200,7 @@ function ProjectPage() {
     for (const file of Array.from(files)) {
       await api.uploadDocument(projectId, file);
     }
-    // ingest идёт в фоне — обновим список через пару секунд
+    // ingest runs in the background — refresh the list in a couple of seconds
     setTimeout(() => void load(), 3000);
     setBusy(false);
     setMessage(`Files uploaded: ${files.length}. Ingest runs in the background.`);
@@ -219,8 +219,8 @@ function ProjectPage() {
         return;
       }
     }
-    // список классов подставит worker; отсюда задаём только порог показа
-    // (значение из JSON-конфига, если пользователь задал его явно, не трогаем)
+    // the worker fills in the class list; from here we only set the display
+    // threshold (if the user set it explicitly in the JSON config, leave it)
     if (isDetection && config.score_threshold === undefined) {
       config.score_threshold = scoreThreshold;
     }
@@ -315,7 +315,7 @@ function ProjectPage() {
           disabled={
             busy ||
             images.length === 0 ||
-            // без имени движка сервер прогнал бы ВСЕ установленные разом
+            // without an engine name the server would run ALL installed ones at once
             !engine ||
             engineBlocked ||
             classesMissing

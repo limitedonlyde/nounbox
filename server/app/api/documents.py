@@ -1,4 +1,4 @@
-"""Документы: загрузка исходных файлов. Полный ingest (нормализация в images) — в worker'е."""
+"""Documents: source file upload. Full ingest (normalization into images) is in the worker."""
 
 import uuid
 
@@ -35,9 +35,9 @@ async def upload_document(
     )
     await run_in_threadpool(storage.put_bytes, doc.s3_key, data, doc.content_type)
     session.add(doc)
-    await session.flush()  # получить doc.id до создания задачи
+    await session.flush()  # get doc.id before creating the job
 
-    # ingest: нормализация -> images (в фоне через worker)
+    # ingest: normalization -> images (in the background via the worker)
     job = Job(
         project_id=project_id,
         type=JobType.INGEST,

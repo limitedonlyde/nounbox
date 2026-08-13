@@ -1,21 +1,21 @@
-"""Generic HTTP labeler: любой движок за крошечной HTTP-конвенцией.
+"""Generic HTTP labeler: any engine behind a tiny HTTP convention.
 
-Позволяет выносить GPU-инференс куда угодно (Modal, RunPod, свой сервер)
-без написания плагина под платформу — достаточно поднять endpoint:
+Lets you move GPU inference anywhere (Modal, RunPod, your own server) without
+writing a plugin for the platform — it is enough to stand up an endpoint:
 
     POST {endpoint}
-    Body: байты изображения (Content-Type: application/octet-stream)
-    Headers: X-Labeler-Config: <json> — сквозной конфиг из config["backend_config"]
-             Authorization: Bearer <api_key> — если задан config["api_key"]
+    Body: image bytes (Content-Type: application/octet-stream)
+    Headers: X-Labeler-Config: <json> — config["backend_config"], passed through
+             Authorization: Bearer <api_key> — if config["api_key"] is set
 
-    Ответ 200: {"annotations": [
+    200 response: {"annotations": [
         {"geometry": {"type": "bbox", "x":.., "y":.., "width":.., "height":..}
                     | {"type": "polygon", "points": [[x, y], ...]},
          "label": "text_line", "text": "...", "confidence": 0.97}
     ]}
 
-Config: endpoint (или env LABELER_HTTP_ENDPOINT), api_key, backend_config, timeout.
-Готовые backend'ы — в deploy/modal/ монорепо.
+Config: endpoint (or env LABELER_HTTP_ENDPOINT), api_key, backend_config, timeout.
+Ready-made backends live in deploy/modal/ of the monorepo.
 """
 
 from __future__ import annotations
@@ -34,8 +34,8 @@ DEFAULT_ENDPOINT = os.environ.get("LABELER_HTTP_ENDPOINT", "")
 class HttpLabeler:
     name = "http"
     version = "0.1.0"
-    # что именно умеет backend — неизвестно; декларируем максимум,
-    # реальные capabilities определяются ответом endpoint'а
+    # what the backend can actually do is unknown; we declare the maximum,
+    # the real capabilities are whatever the endpoint answers with
     capabilities = {
         Capability.DETECTION,
         Capability.RECOGNITION,
@@ -95,11 +95,12 @@ class HttpLabeler:
 
 
 class ModalGpuLabeler(HttpLabeler):
-    """Режим «сложно»: тот же HTTP-контракт, но endpoint подставляет платформа.
+    """The "hard" mode made turnkey: same HTTP contract, but the platform
+    supplies the endpoint.
 
-    Пользователь ничего не настраивает руками: адрес развёрнутого в его
-    аккаунте Modal рецепта приходит из настроек инсталляции
-    (см. services/settings_store.resolve_labeler_config).
+    The user configures nothing by hand: the address of the recipe deployed
+    into their own Modal account comes from the installation settings
+    (see services/settings_store.resolve_labeler_config).
     """
 
     name = "modal_gpu"

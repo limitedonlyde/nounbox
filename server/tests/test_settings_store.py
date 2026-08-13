@@ -1,4 +1,4 @@
-"""Резолв конфига движка из настроек."""
+"""Resolving the engine config out of the settings."""
 
 import pytest
 
@@ -6,7 +6,7 @@ from app.models import GpuStatus, InstanceSettings
 from app.services import settings_store
 
 ENDPOINT = "https://ws--nounbox-gpu-fastapi-app.modal.run"
-# рецепт слушает POST /predict — резолвер дописывает путь сам
+# the recipe listens on POST /predict — the resolver appends the path itself
 PREDICT = f"{ENDPOINT}/predict"
 
 

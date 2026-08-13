@@ -1,4 +1,4 @@
-"""HTTP-слой экспорта: форматы по task_type, классы проекта в разметке."""
+"""Export HTTP layer: formats by task_type, project classes in the labels."""
 
 import io
 import json
@@ -16,13 +16,15 @@ BASE = "/api/v1"
 
 @pytest.fixture(autouse=True)
 def fake_storage(monkeypatch):
-    """Байты картинок берутся из S3 — подменяем на настоящий PNG 640x480."""
+    """Image bytes come from S3 — we substitute a real 640x480 PNG."""
     buffer = io.BytesIO()
     PILImage.new("RGB", (640, 480), "white").save(buffer, format="PNG")
     monkeypatch.setattr(storage, "get_bytes", lambda key: buffer.getvalue())
 
 
 async def make_project(client, task_type: str | None = None) -> str:
+    # A non-ASCII project name on purpose: this is the suite's only check that
+    # one survives the HTTP layer, the database round-trip and the export ZIP.
     body: dict = {"name": "квартиры"}
     if task_type is not None:
         body["task_type"] = task_type
@@ -80,7 +82,7 @@ async def seed_image(
     labelled: tuple[tuple[str, AnnotationStatus], ...] = (),
     reviewed: bool = False,
 ) -> uuid.UUID:
-    """Отдельный кадр проекта с заданными аннотациями; возвращает его id."""
+    """A separate project frame with the given annotations; returns its id."""
     async with session_factory() as session:
         document = Document(
             project_id=uuid.UUID(project_id), filename="a.png", s3_key="doc/a.png"
@@ -119,7 +121,7 @@ async def seed_image(
 
 
 def yolo_label(zf: zipfile.ZipFile, image_id: uuid.UUID) -> str:
-    """Содержимое labels/<split>/<stem>.txt для кадра (сплит выбирается хешем)."""
+    """Contents of labels/<split>/<stem>.txt for a frame (split chosen by hash)."""
     names = [n for n in zf.namelist() if n.endswith(f"/{image_id.hex}.txt")]
     assert names, f"no label file for {image_id.hex} in {zf.namelist()}"
     return zf.read(names[0]).decode()
@@ -135,7 +137,7 @@ def read_zip(response) -> zipfile.ZipFile:
     return zipfile.ZipFile(io.BytesIO(response.content))
 
 
-# --- список форматов ---
+# --- format list ---
 async def test_formats_endpoint_follows_task_type(client):
     detection = await make_project(client)
     ocr = await make_project(client, "ocr")
@@ -178,7 +180,7 @@ async def test_yolo_rejected_for_ocr_project(client, session_factory):
     assert "task_type=ocr" in response.json()["detail"]
 
 
-# --- содержимое экспорта ---
+# --- export contents ---
 async def test_default_format_is_yolo_for_detection(client, session_factory):
     project_id = await make_project(client)
     await add_classes(client, project_id, "carpet", "sofa")
@@ -190,7 +192,7 @@ async def test_default_format_is_yolo_for_detection(client, session_factory):
     names = zf.namelist()
     assert "data.yaml" in names
     labels = [n for n in names if n.startswith("labels/")]
-    # class_idx = позиция класса в списке проекта (sort_order), не алфавит
+    # class_idx = class position in the project list (sort_order), not alphabet
     assert zf.read(labels[0]).decode() == "1 0.312500 0.208333 0.312500 0.208333"
     manifest = json.loads(zf.read("manifest.json"))
     assert manifest["format"] == "yolo_detect"
@@ -253,12 +255,12 @@ async def test_only_verified_annotations_are_exported(client, session_factory):
     assert manifest["statuses_included"] == ["accepted", "edited"]
 
 
-# --- фоновые кадры: проверено человеком, объектов нет ---
+# --- background frames: reviewed by a human, no objects ---
 async def test_frame_with_only_rejected_annotations_is_exported_as_background(
     client, session_factory
 ):
-    """Все рамки отклонены — кадр проверен и пуст, для детектора это негативный
-    пример, а не повод выкинуть его из датасета."""
+    """All boxes rejected — the frame is reviewed and empty; for a detector that
+    is a negative example, not a reason to drop it from the dataset."""
     project_id = await make_project(client)
     await add_classes(client, project_id, "carpet")
     with_object = await seed_image(
@@ -270,7 +272,7 @@ async def test_frame_with_only_rejected_annotations_is_exported_as_background(
 
     zf = read_zip(await export(client, project_id, "yolo_detect"))
     assert yolo_label(zf, with_object) == "0 0.312500 0.208333 0.312500 0.208333"
-    assert yolo_label(zf, background) == ""  # пустой .txt — легальный фон
+    assert yolo_label(zf, background) == ""  # an empty .txt is legal background
     manifest = json.loads(zf.read("manifest.json"))
     assert manifest["images"] == 2
     assert manifest["annotations"] == 1
@@ -293,7 +295,7 @@ async def test_image_marked_reviewed_without_annotations_is_exported(
 
 
 async def test_unreviewed_images_stay_out_of_the_dataset(client, session_factory):
-    """Кадр, который человек не смотрел, нельзя отдать в обучение как фон."""
+    """A frame no human has looked at must not go into training as background."""
     project_id = await make_project(client)
     await add_classes(client, project_id, "carpet")
     await seed_image(
@@ -327,7 +329,7 @@ async def test_coco_keeps_background_image_without_annotations(
     coco = json.loads(zf.read("annotations.json"))
     assert len(coco["images"]) == 2
     assert len(coco["annotations"]) == 1
-    # у фонового кадра есть запись в images и сам файл, но нет аннотаций
+    # the background frame has an images entry and the file, but no annotations
     annotated = {entry["image_id"] for entry in coco["annotations"]}
     background = [entry for entry in coco["images"] if entry["id"] not in annotated]
     assert len(background) == 1
@@ -358,9 +360,9 @@ async def _labels_in(zip_bytes: bytes) -> dict[str, str]:
 async def test_partially_reviewed_frame_is_not_exported_as_background(
     client, session_factory
 ):
-    """Отклонил одну рамку, вторую не смотрел — кадр НЕ фон, а недоделанный.
+    """One rejected box, one unreviewed — the frame is unfinished, NOT background.
 
-    Пустой файл меток на таком кадре научил бы модель считать объект фоном.
+    An empty label file here would teach the model to treat the object as background.
     """
     project_id = await make_project(client)
     await add_classes(client, project_id, "sofa")
@@ -374,11 +376,11 @@ async def test_partially_reviewed_frame_is_not_exported_as_background(
         f"{BASE}/projects/{project_id}/export", params={"format": "yolo_detect"}
     )
 
-    assert response.status_code == 400, "нечего экспортировать — кадр не доделан"
+    assert response.status_code == 400, "nothing to export — the frame is unfinished"
 
 
 async def test_fully_rejected_frame_becomes_background(client, session_factory):
-    """Все рамки отклонены, непросмотренных нет — валидный фоновый пример."""
+    """All boxes rejected, none left unreviewed — a valid background example."""
     project_id = await make_project(client)
     await add_classes(client, project_id, "sofa")
     await seed_image(
@@ -391,14 +393,16 @@ async def test_fully_rejected_frame_becomes_background(client, session_factory):
 
     assert response.status_code == 200, response.text
     labels = await _labels_in(response.content)
-    # единственный кадр намеренно попадает и в train, и в val — иначе одна
-    # из частей осталась бы пустой
-    assert labels, "кадр должен попасть в датасет"
-    assert all(v.strip() == "" for v in labels.values()), "фоновый кадр — пустой .txt"
+    # the lone frame deliberately goes into both train and val — otherwise one
+    # of the parts would be left empty
+    assert labels, "the frame must land in the dataset"
+    assert all(v.strip() == "" for v in labels.values()), "background frame: empty .txt"
 
 
 async def test_image_marked_reviewed_becomes_background(client, session_factory):
-    """Кадр без единой рамки попадает в датасет только после явной пометки."""
+    """A frame without a single box enters the dataset only after it is
+    explicitly marked reviewed.
+    """
     project_id = await make_project(client)
     await add_classes(client, project_id, "sofa")
     image_id = await seed_image(session_factory, project_id, ())
@@ -406,7 +410,7 @@ async def test_image_marked_reviewed_becomes_background(client, session_factory)
     empty = await client.get(
         f"{BASE}/projects/{project_id}/export", params={"format": "yolo_detect"}
     )
-    assert empty.status_code == 400, "непросмотренный кадр в датасет не идёт"
+    assert empty.status_code == 400, "an unreviewed frame does not enter the dataset"
 
     marked = await client.patch(f"{BASE}/images/{image_id}", json={"reviewed": True})
     assert marked.status_code == 200, marked.text
@@ -420,7 +424,7 @@ async def test_image_marked_reviewed_becomes_background(client, session_factory)
 
 
 async def test_background_frames_stay_out_of_ocr_exports(client, session_factory):
-    """В OCR-датасете кадр без строк — мусор: загрузчик его всё равно выбросит."""
+    """A frame with no lines is junk in an OCR dataset: the loader drops it anyway."""
     project_id = await make_project(client, task_type="ocr")
     await seed_image(
         session_factory, project_id, (("text_line", AnnotationStatus.ACCEPTED),)
@@ -436,5 +440,5 @@ async def test_background_frames_stay_out_of_ocr_exports(client, session_factory
     with zipfile.ZipFile(io.BytesIO(response.content)) as zf:
         images = [n for n in zf.namelist() if n.startswith("images/")]
         lines = zf.read("label.txt").decode().strip().split("\n")
-    assert len(images) == 1, "фоновый кадр в OCR-экспорт попадать не должен"
+    assert len(images) == 1, "a background frame must not reach an OCR export"
     assert len(lines) == 1

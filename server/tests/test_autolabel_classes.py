@@ -1,4 +1,4 @@
-"""Автолейбл детекции: движок получает классы проекта, пустой список — ошибка."""
+"""Detection autolabel: the engine gets the project classes, empty list is an error."""
 
 import uuid
 
@@ -23,7 +23,7 @@ from app.workers import tasks
 
 
 class RecordingDetector:
-    """Движок детекции: запоминает конфиг и возвращает один бокс."""
+    """Detection engine: remembers the config and returns a single box."""
 
     version = "0.1.0"
     name = "owlv2"
@@ -131,7 +131,7 @@ async def test_detection_without_classes_fails_with_hint(
 
     assert job.status == JobStatus.FAILED
     assert job.result["error"] == "Add project classes before starting the labeling run"
-    assert labeler.configs == []  # движок даже не вызывался
+    assert labeler.configs == []  # the engine was not even called
     async with session_factory() as session:
         assert (await session.execute(select(Annotation))).first() is None
 
@@ -151,8 +151,8 @@ async def test_ocr_project_config_has_no_classes(session_factory, key_path, monk
 async def test_project_classes_override_config_classes(
     session_factory, key_path, monkeypatch
 ):
-    """Список классов задаётся в проекте, а не в JSON задачи — иначе разметка
-    разъедется с тем, что человек видит в UI и получит в экспорте."""
+    """The class list comes from the project, not from the job JSON — otherwise the
+    labeling drifts away from what the human sees in the UI and gets in the export."""
     labeler = RecordingDetector()
     install(monkeypatch, labeler)
     project_id = await make_project(session_factory, TaskType.DETECTION, ["carpet"])
@@ -216,7 +216,7 @@ async def run_job_rerun(session_factory, project_id, rerun: bool) -> Job:
 async def test_rerun_keeps_reviewed_and_does_not_duplicate_it(
     session_factory, key_path, monkeypatch
 ):
-    """Перезапуск после добавления класса не задваивает работу человека."""
+    """A rerun after a class was added must not duplicate the human's work."""
     from app.models import AnnotationStatus
 
     install(monkeypatch, RecordingDetector())
@@ -228,27 +228,27 @@ async def test_rerun_keeps_reviewed_and_does_not_duplicate_it(
         ann.status = AnnotationStatus.ACCEPTED
         await session.commit()
 
-    # без rerun изображение пропускается — пользователь получил бы ноль без причины
+    # without rerun the image is skipped — the user would get zero for no reason
     job = await run_job_rerun(session_factory, project_id, rerun=False)
     assert job.result["annotations_created"] == 0
     assert job.result["skipped_already_labeled"] == 1
 
-    # с rerun движок отработал заново, но ту же рамку не подсунул повторно
+    # with rerun the engine ran again, but did not slip the same box in twice
     job = await run_job_rerun(session_factory, project_id, rerun=True)
-    assert job.result["skipped_already_labeled"] == 0, "перезапуск обязан снять пропуск"
+    assert job.result["skipped_already_labeled"] == 0, "a rerun must not skip already-labeled images"
     assert job.result["skipped_duplicates"] == 1
     assert job.result["annotations_created"] == 0
 
     async with session_factory() as session:
         rows = (await session.execute(select(Annotation))).scalars().all()
-    assert len(rows) == 1, "принятая рамка задвоилась"
-    assert rows[0].status == AnnotationStatus.ACCEPTED, "правка человека потеряна"
+    assert len(rows) == 1, "the accepted box got duplicated"
+    assert rows[0].status == AnnotationStatus.ACCEPTED, "the human's edit was lost"
 
 
 async def test_rerun_adds_boxes_for_newly_added_class(
     session_factory, key_path, monkeypatch
 ):
-    """Главный сценарий: добавил класс -> перезапустил -> рамки появились."""
+    """The main scenario: add a class -> rerun -> the boxes show up."""
     from app.models import AnnotationStatus
 
     install(monkeypatch, RecordingDetector())
@@ -259,7 +259,7 @@ async def test_rerun_adds_boxes_for_newly_added_class(
         ann.status = AnnotationStatus.ACCEPTED
         await session.commit()
 
-    # пользователь добавил класс: движок теперь отдаёт рамку с новым ярлыком
+    # the user added a class: the engine now returns a box with the new label
     async with session_factory() as session:
         session.add(
             ProjectClass(
@@ -283,7 +283,7 @@ async def test_rerun_adds_boxes_for_newly_added_class(
     install(monkeypatch, WheelDetector())
     job = await run_job_rerun(session_factory, project_id, rerun=True)
 
-    assert job.result["annotations_created"] == 1  # только новый класс
+    assert job.result["annotations_created"] == 1  # only the new class
     async with session_factory() as session:
         rows = (await session.execute(select(Annotation))).scalars().all()
     labels = sorted(a.label for a in rows)
@@ -301,4 +301,4 @@ async def test_rerun_drops_stale_pending_boxes(session_factory, key_path, monkey
     assert job.result["replaced_pending"] == 1
     async with session_factory() as session:
         rows = (await session.execute(select(Annotation))).scalars().all()
-    assert len(rows) == 1, "старая непроверенная рамка должна была замениться, а не задвоиться"
+    assert len(rows) == 1, "the old pending box had to be replaced, not duplicated"

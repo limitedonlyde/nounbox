@@ -1,4 +1,4 @@
-"""Pydantic-схемы API."""
+"""Pydantic schemas for the API."""
 
 import re
 import uuid
@@ -16,8 +16,8 @@ from app.models import (
     TaskType,
 )
 
-# Имя класса уходит в движок как текстовый запрос ("carpet", "coffee table"),
-# поэтому оно английское: кириллица/иероглифы дадут молча пустую разметку.
+# A class name goes to the engine as a text query ("carpet", "coffee table"),
+# hence English: Cyrillic or CJK silently produce empty labeling.
 CLASS_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9 '\-_/().]*$")
 CLASS_NAME_HINT = (
     "A class name is written in English words: Latin letters, digits, "
@@ -60,11 +60,11 @@ class ProjectOut(BaseModel):
 # --- Project classes (detection) ---
 class ProjectClassCreate(BaseModel):
     name: ClassName
-    color: ClassColor | None = None  # None — цвет из палитры по порядку
+    color: ClassColor | None = None  # None — next color from the palette
 
 
 class ProjectClassReplace(BaseModel):
-    """PUT: список классов проекта целиком (цвета назначаются автоматически)."""
+    """PUT: the project's class list as a whole (colors assigned automatically)."""
 
     names: list[ClassName]
 
@@ -105,8 +105,8 @@ class ImageOut(BaseModel):
     height: int
     content_hash: str | None
     blur_score: float | None
-    # человек подтвердил, что смотрел кадр: нужно, чтобы кадр БЕЗ объектов
-    # попал в датасет как фоновый пример, а не потерялся
+    # a human confirmed they looked at the frame: needed so that a frame with
+    # NO objects lands in the dataset as a background example instead of being lost
     reviewed: bool
     created_at: datetime
 
@@ -175,22 +175,22 @@ class AnnotationOut(BaseModel):
 
 class BulkAcceptRequest(BaseModel):
     min_confidence: float = 0.9
-    labeler: str | None = None  # ограничить конкретным движком
+    labeler: str | None = None  # restrict to one specific engine
 
 
 # --- Jobs ---
 class AutolabelRequest(BaseModel):
-    labeler: str | None = None  # имя движка; None — все установленные
+    labeler: str | None = None  # engine name; None — every installed one
     config: dict[str, Any] = Field(default_factory=dict)
-    # Перезапуск на уже размеченных изображениях. Нужен, когда изменился список
-    # классов: без него движок пропустит все кадры и вернёт ноль без объяснений.
-    # Непроверенные рамки этого движка заменяются, принятые человеком — нет.
+    # Re-run over images that are already labeled. Needed when the class list
+    # changed: without it the engine skips every frame and silently returns zero.
+    # Pending boxes of this engine are replaced, human-accepted ones are not.
     rerun: bool = False
 
 
 class JobOut(BaseModel):
     id: uuid.UUID
-    project_id: uuid.UUID | None  # deploy_gpu — задача без проекта
+    project_id: uuid.UUID | None  # deploy_gpu is a job without a project
     type: JobType
     status: JobStatus
     payload: dict[str, Any]
@@ -208,15 +208,15 @@ class SettingsOut(BaseModel):
     gpu_status: GpuStatus
     gpu_endpoint_url: str | None
     gpu_error: str | None
-    # защищены ли ручки, распоряжающиеся токеном Modal и деплоем; false —
-    # UI показывает предупреждение, а не делает вид, что всё в порядке
+    # whether the endpoints that control the Modal token and the deploy are
+    # protected; false — the UI shows a warning instead of pretending all is well
     access_protected: bool = False
 
 
 class ModalTokenUpdate(BaseModel):
-    """Без ограничений длины/формата в схеме: 422 от pydantic возвращает
-    невалидное значение в теле ответа, а секрет наружу выходить не должен —
-    формат проверяется в ручке."""
+    """No length/format constraints in the schema: pydantic's 422 echoes the
+    invalid value back in the response body, and the secret must never leave —
+    the format is checked in the endpoint instead."""
 
     modal_token_id: str
     modal_token_secret: str
@@ -226,7 +226,7 @@ class LabelerOut(BaseModel):
     name: str
     title: str
     requires: Literal["cpu", "modal", "config"]
-    # типы задач, для которых движок пригоден — UI прячет лишнее
+    # task types this engine is suitable for — the UI hides the rest
     tasks: list[TaskType]
     available: bool
     reason: str | None

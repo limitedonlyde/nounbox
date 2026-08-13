@@ -1,4 +1,4 @@
-"""Классы проекта: CRUD, уникальность имени, удаление используемого класса."""
+"""Project classes: CRUD, name uniqueness, deleting a class that is in use."""
 
 import uuid
 
@@ -12,7 +12,7 @@ BASE = "/api/v1"
 
 
 async def make_project(client, task_type: str | None = None) -> str:
-    body: dict = {"name": "квартиры"}
+    body: dict = {"name": "flats"}
     if task_type is not None:
         body["task_type"] = task_type
     response = await client.post(f"{BASE}/projects", json=body)
@@ -53,7 +53,7 @@ async def add_annotation(client, image_id: uuid.UUID, label: str) -> str:
     return response.json()["id"]
 
 
-# --- task_type проекта ---
+# --- project task_type ---
 async def test_project_is_detection_by_default(client):
     project_id = await make_project(client)
 
@@ -162,7 +162,7 @@ async def test_bad_color_rejected(client):
     assert response.status_code == 422
 
 
-# --- уникальность ---
+# --- uniqueness ---
 async def test_duplicate_name_rejected(client):
     project_id = await make_project(client)
     await add_classes(client, project_id, "sofa")
@@ -176,7 +176,7 @@ async def test_duplicate_name_rejected(client):
 
 
 async def test_duplicate_name_is_case_insensitive(client):
-    """«Sofa» и «sofa» — один и тот же запрос к движку, дубли боксов не нужны."""
+    """'Sofa' and 'sofa' are one query to the engine — we do not want doubled boxes."""
     project_id = await make_project(client)
     await add_classes(client, project_id, "sofa")
 
@@ -197,7 +197,7 @@ async def test_same_name_in_other_project_is_fine(client):
     assert response.status_code == 201
 
 
-# --- PUT: замена списка целиком ---
+# --- PUT: replacing the whole list ---
 async def test_put_replaces_list_and_keeps_surviving_classes(client):
     project_id = await make_project(client)
     before = await add_classes(client, project_id, "carpet", "sofa", "lamp")
@@ -207,7 +207,7 @@ async def test_put_replaces_list_and_keeps_surviving_classes(client):
 
     assert [c["name"] for c in after] == ["sofa", "chandelier"]
     assert [c["sort_order"] for c in after] == [0, 1]
-    # уцелевший класс сохраняет id и цвет — боксы в Review UI не перекрашиваются
+    # a surviving class keeps its id and color — Review UI boxes do not change color
     assert after[0]["id"] == sofa["id"]
     assert after[0]["color"] == sofa["color"]
     assert (await client.get(f"{BASE}/projects/{project_id}/classes")).json() == after
@@ -360,7 +360,7 @@ async def test_force_delete_removes_class_with_annotations(client, session_facto
 
 
 async def test_annotations_of_other_project_do_not_block_delete(client, session_factory):
-    """Класс проекта A не должен считать аннотации проекта B с тем же именем."""
+    """A class of project A must not count same-named annotations from project B."""
     first = await make_project(client)
     second = await make_project(client)
     classes = await add_classes(client, first, "sofa")
@@ -426,7 +426,7 @@ async def test_put_new_class_does_not_reuse_colour_of_survivor(client):
     project_id = await make_project(client)
     await add_classes(client, project_id, "sofa")
 
-    # новое имя встаёт ПЕРВЫМ — по индексу оно получило бы цвет уцелевшего
+    # the new name comes FIRST — by index it would get the survivor's color
     response = await client.put(
         f"{BASE}/projects/{project_id}/classes", json={"names": ["carpet", "sofa"]}
     )

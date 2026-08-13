@@ -1,28 +1,28 @@
-"""Экспорт датасета в форматы для обучения моделей.
+"""Dataset export into formats for model training.
 
-Экспортируются ТОЛЬКО проверенные человеком аннотации (accepted/edited) —
-pending/rejected в датасет не попадают. Каждый экспорт содержит manifest.json
-(snapshot-версия датасета: task_type, классы, счётчики).
+ONLY human-reviewed annotations (accepted/edited) are exported — pending and
+rejected never reach the dataset. Every export ships a manifest.json (a
+snapshot version of the dataset: task_type, classes, counts).
 
-В датасет идут и проверенные кадры без единой рамки: для детектора это
-негативные (фоновые) примеры, они снижают ложные срабатывания, и YOLO их ест
-штатно (пустой .txt рядом с картинкой), COCO — записью в images без
-аннотаций. Проверенным считается кадр, у которого есть хотя бы одна
-аннотация в статусе accepted/edited/rejected либо выставлен Image.reviewed;
-непросмотренные кадры не попадают в датасет вообще — иначе неразмеченный
-объект уехал бы в обучение как фон.
+Reviewed frames without a single box go into the dataset as well: for a
+detector those are negative (background) examples, they cut down false
+positives, and YOLO handles them natively (an empty .txt next to the image),
+COCO — as an entry in images with no annotations. A frame counts as reviewed
+when it has at least one annotation in status accepted/edited/rejected, or
+when Image.reviewed is set; unreviewed frames do not get into the dataset at
+all — otherwise an unlabeled object would go into training as background.
 
-Набор форматов зависит от Project.task_type:
+The set of formats depends on Project.task_type:
 
 detection
 - yolo_detect: images/{train,val}/ + labels/{train,val}/*.txt
-  (`class_idx cx cy w h`, нормировано 0..1) + data.yaml
-- coco: images/ + annotations.json (instances: categories из классов проекта)
+  (`class_idx cx cy w h`, normalized to 0..1) + data.yaml
+- coco: images/ + annotations.json (instances: categories from project classes)
 
 ocr
 - paddleocr_det: images/ + label.txt (`path\\t[{"transcription":..., "points":...}]`)
-- paddleocr_rec: crops/ + label.txt (`path\\ttext`) — кропы текстовых строк
-- coco: images/ + annotations.json (детекция, текст — в attributes)
+- paddleocr_rec: crops/ + label.txt (`path\\ttext`) — crops of text lines
+- coco: images/ + annotations.json (detection, text goes into attributes)
 """
 
 from __future__ import annotations
@@ -43,8 +43,8 @@ from PIL import Image as PILImage
 from app.models import Annotation, AnnotationStatus, Image
 
 EXPORTABLE_STATUSES = (AnnotationStatus.ACCEPTED, AnnotationStatus.EDITED)
-# статусы, доказывающие, что кадр смотрел человек (rejected — тоже решение
-# человека: рамка была, её убрали)
+# statuses that prove a human looked at the frame (rejected is a human decision
+# too: there was a box and a human removed it)
 REVIEWED_STATUSES = (
     AnnotationStatus.ACCEPTED,
     AnnotationStatus.EDITED,
@@ -61,7 +61,7 @@ FORMATS_BY_TASK: dict[str, tuple[str, ...]] = {
 }
 FORMATS: tuple[str, ...] = ("yolo_detect", "coco", "paddleocr_det", "paddleocr_rec")
 
-# доля val в yolo-сплите; сплит детерминирован (см. _split_of)
+# val share of the yolo split; the split is deterministic (see _split_of)
 VAL_FRACTION = 0.2
 
 
@@ -70,17 +70,17 @@ class ExportError(ValueError):
 
 
 def formats_for(task_type: str | None) -> tuple[str, ...]:
-    """Форматы, доступные проекту. Неизвестный/пустой task_type — как detection."""
+    """Formats available to a project. Unknown/empty task_type acts as detection."""
     return FORMATS_BY_TASK.get(
         task_type or DEFAULT_TASK_TYPE, FORMATS_BY_TASK[DEFAULT_TASK_TYPE]
     )
 
 
 class ExportItem:
-    """Изображение + его байты (PNG после ingest) + проверенные аннотации.
+    """An image + its bytes (PNG after ingest) + its reviewed annotations.
 
-    Пустой список аннотаций легален: проверенный кадр без объектов — фоновый
-    пример датасета.
+    An empty annotation list is legal: a reviewed frame with no objects is a
+    background example of the dataset.
     """
 
     def __init__(self, image: Image, data: bytes, annotations: list[Annotation]):
@@ -91,13 +91,13 @@ class ExportItem:
 
 @dataclass
 class ExportContext:
-    """Всё, что билдеру нужно знать о проекте помимо самих картинок."""
+    """Everything a builder needs to know about the project besides the images."""
 
     project_id: str
     task_type: str = DEFAULT_TASK_TYPE
-    # имена классов проекта в порядке sort_order: индекс здесь = class_idx в YOLO
+    # project class names in sort_order: the index here is the class_idx in YOLO
     classes: tuple[str, ...] = ()
-    # метки аннотаций, которых нет среди классов проекта (класс удалили/переименовали)
+    # annotation labels absent from the project classes (class deleted/renamed)
     skipped_labels: dict[str, int] = field(default_factory=dict)
 
     def skip(self, label: str) -> None:
@@ -105,7 +105,7 @@ class ExportContext:
 
 
 def _points(geometry: dict[str, Any]) -> list[list[float]]:
-    """Полигон из 4 точек (bbox разворачивается)."""
+    """A polygon of 4 points (a bbox is expanded into one)."""
     if geometry["type"] == "polygon":
         return [[float(x), float(y)] for x, y in geometry["points"]]
     x, y = geometry["x"], geometry["y"]
@@ -114,7 +114,7 @@ def _points(geometry: dict[str, Any]) -> list[list[float]]:
 
 
 def _bbox(geometry: dict[str, Any]) -> tuple[float, float, float, float]:
-    """(x, y, w, h). Полигон сводится к ограничивающему прямоугольнику."""
+    """(x, y, w, h). A polygon is reduced to its bounding box."""
     if geometry["type"] == "bbox":
         return (
             float(geometry["x"]),
@@ -132,7 +132,7 @@ def _image_name(index: int) -> str:
 
 
 def _flatten_ws(text: str) -> str:
-    """Табуляции/переводы строк ломают tab-separated label.txt — заменяем пробелом."""
+    """Tabs/newlines break the tab-separated label.txt — we swap them for a space."""
     return text.replace("\r\n", " ").replace("\t", " ").replace("\r", " ").replace("\n", " ")
 
 
@@ -141,12 +141,12 @@ def _write_common(zf: zipfile.ZipFile, items: list[ExportItem]) -> None:
         zf.writestr(_image_name(index), item.data)
 
 
-# --- ocr-форматы ---
+# --- ocr formats ---
 def _build_det(
     zf: zipfile.ZipFile, items: list[ExportItem], ctx: ExportContext
 ) -> dict[str, Any]:
-    # фоновые кадры полезны детектору, но не OCR: загрузчик PaddleOCR
-    # выбрасывает записи с нулём боксов, в датасете от них только мусор
+    # background frames help a detector but not OCR: the PaddleOCR loader
+    # throws away entries with zero boxes, they are only junk in the dataset
     items = [i for i in items if i.annotations]
     _write_common(zf, items)
     lines = []
@@ -173,7 +173,7 @@ def _build_rec(
         pil = PILImage.open(io.BytesIO(item.data))
         for ann_index, a in enumerate(item.annotations):
             if not a.text:
-                continue  # rec-формату нужен текст
+                continue  # the rec format needs text
             x, y, w, h = _bbox(a.geometry)
             crop = pil.crop((int(x), int(y), int(x + w), int(y + h)))
             if crop.width < 2 or crop.height < 2:
@@ -190,36 +190,36 @@ def _build_rec(
 
 # --- yolo (detection) ---
 def _yolo_stem(image: Image) -> str:
-    """Стабильное имя файла: id изображения, а не порядковый номер в выборке.
+    """Stable file name: the image id, not its index in the selection.
 
-    От имени считается сплит, поэтому имя обязано пережить добавление/удаление
-    соседних снимков — иначе повторный экспорт перетасовал бы train/val.
+    The split is derived from the name, so it must survive adding or removing
+    neighboring images — otherwise a repeat export would reshuffle train/val.
     """
     return image.id.hex if isinstance(image.id, uuid.UUID) else str(image.id)
 
 
 def _bucket_of(stem: str) -> int:
-    """Корзина 0..99 по имени файла.
+    """Bucket 0..99 derived from the file name.
 
-    blake2b, а не встроенный hash(): тот солится PYTHONHASHSEED и между
-    процессами не воспроизводится.
+    blake2b and not the built-in hash(): the latter is salted with
+    PYTHONHASHSEED and is not reproducible across processes.
     """
     digest = hashlib.blake2b(stem.encode(), digest_size=8).digest()
     return int.from_bytes(digest, "big") % 100
 
 
 def _split_of(stem: str) -> str:
-    """Детерминированный train/val: одно имя — всегда одна и та же часть."""
+    """Deterministic train/val: one name always lands in the same part."""
     return "val" if _bucket_of(stem) < round(VAL_FRACTION * 100) else "train"
 
 
 def _assign_splits(stems: list[str]) -> dict[str, tuple[str, ...]]:
-    """Раскладка снимков по train/val.
+    """Distribution of the images over train/val.
 
-    Обе части обязаны быть непустыми — ultralytics падает на отсутствующей
-    папке. На маленькой выборке хеш может не дать ни одного val, тогда туда
-    детерминированно уезжает снимок с граничной корзиной; единственный снимок
-    попадает и в train, и в val.
+    Both parts must be non-empty — ultralytics crashes on a missing folder. On
+    a small selection the hash may yield no val at all; then the image with the
+    boundary bucket is moved there deterministically, and a lone image goes
+    into both train and val.
     """
     if len(stems) == 1:
         return {stems[0]: ("train", "val")}
@@ -235,10 +235,10 @@ def _assign_splits(stems: list[str]) -> dict[str, tuple[str, ...]]:
 def _clipped_bbox(
     geometry: dict[str, Any], width: int, height: int
 ) -> tuple[float, float, float, float] | None:
-    """Бокс, обрезанный по кадру: (x1, y1, x2, y2). None — вырожденный.
+    """Box clipped to the frame: (x1, y1, x2, y2). None means degenerate.
 
-    Общая для YOLO и COCO: иначе один и тот же проект давал бы два разных
-    датасета — движки умеют возвращать рамки, частично уехавшие за край.
+    Shared by YOLO and COCO: otherwise one and the same project would give two
+    different datasets — the engines can return boxes partly off the edge.
     """
     if width <= 0 or height <= 0:
         return None
@@ -253,7 +253,7 @@ def _clipped_bbox(
 def _yolo_line(
     class_index: int, geometry: dict[str, Any], width: int, height: int
 ) -> str | None:
-    """`class_idx cx cy w h`, нормировано 0..1. None — бокс вырожденный."""
+    """`class_idx cx cy w h`, normalized to 0..1. None if the box is degenerate."""
     clipped = _clipped_bbox(geometry, width, height)
     if clipped is None:
         return None
@@ -267,13 +267,13 @@ def _yolo_line(
 
 
 def _data_yaml(classes: Sequence[str]) -> str:
-    """data.yaml для ultralytics. json.dumps даёт корректно экранированный
-    YAML-скаляр в кавычках, так что pyyaml в зависимостях не нужен."""
+    """data.yaml for ultralytics. json.dumps yields a correctly escaped quoted
+    YAML scalar, so pyyaml is not needed among the dependencies."""
     lines = [
         "# Nounbox export",
-        # ключ path намеренно не пишем: без него ultralytics берёт за корень
-        # датасета папку самого data.yaml, а `path: .` он разрешает в текущую
-        # рабочую директорию (data/utils.py: path.exists() → путь берётся как есть)
+        # the path key is deliberately omitted: without it ultralytics takes the
+        # data.yaml folder as the dataset root, while `path: .` resolves to the
+        # current working directory (data/utils.py: path.exists() → path as is)
         "train: images/train",
         "val: images/val",
         f"nc: {len(classes)}",
@@ -305,7 +305,7 @@ def _build_yolo(
             if line is not None:
                 lines.append(line)
         for split in assigned[stem]:
-            # пустой .txt — легальный негативный пример, картинку всё равно кладём
+            # an empty .txt is a legal negative example, the image goes in anyway
             zf.writestr(f"images/{split}/{stem}.png", item.data)
             zf.writestr(f"labels/{split}/{stem}.txt", "\n".join(lines))
             images[split] += 1
@@ -326,7 +326,7 @@ def _build_coco(
     _write_common(zf, items)
     detection = ctx.task_type == "detection"
     if detection:
-        # категории — классы проекта в порядке sort_order, id 1-based (конвенция COCO)
+        # categories are project classes in sort_order, ids 1-based (COCO convention)
         names: Sequence[str] = ctx.classes
     else:
         names = sorted({a.label for item in items for a in item.annotations})
@@ -355,8 +355,8 @@ def _build_coco(
                 ctx.skip(a.label)
                 continue
             if detection:
-                # тот же клип, что в YOLO: экспорты одного проекта обязаны
-                # содержать одинаковый набор рамок
+                # the same clipping as in YOLO: exports of one project must
+                # contain an identical set of boxes
                 clipped = _clipped_bbox(a.geometry, item.image.width, item.image.height)
                 if clipped is None:
                     continue
@@ -374,7 +374,7 @@ def _build_coco(
                 "iscrowd": 0,
             }
             if detection:
-                # только боксы (решение владельца) — сегментации в датасете нет
+                # boxes only (the owner's decision) — no segmentation in the dataset
                 entry["segmentation"] = []
                 entry["attributes"] = {
                     "confidence": a.confidence,
@@ -420,8 +420,8 @@ def build_zip(
         raise ExportError(
             "No reviewed images to export: review images before exporting"
         )
-    # в detection и class_idx (YOLO), и category_id (COCO) — это позиция в списке
-    # классов проекта, без него экспортировать нечего
+    # in detection both class_idx (YOLO) and category_id (COCO) are a position in
+    # the project class list, without it there is nothing to export
     if task_type == "detection" and not classes:
         raise ExportError("Project has no classes: add project classes before export")
 
@@ -431,10 +431,10 @@ def build_zip(
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
         stats = _BUILDERS[fmt](zf, items, ctx)
-        # Пустой ZIP отдавать нельзя, но «ноль рамок» — не то же самое, что
-        # «нечего отдавать»: датасет из одних проверенных фоновых кадров
-        # осмысленен для детектора. Отказываем, только если в архив вообще
-        # не попало ни одного кадра.
+        # An empty ZIP must not be served, but "zero boxes" is not the same as
+        # "nothing to serve": a dataset of nothing but reviewed background
+        # frames is meaningful for a detector. We refuse only when not a single
+        # frame made it into the archive.
         if stats.get("images_written", len(items)) == 0:
             raise ExportError(
                 f"Nothing to export in format {fmt}: review some images first"
@@ -448,7 +448,7 @@ def build_zip(
             "classes": list(ctx.classes),
             "created_at": datetime.now(timezone.utc).isoformat(),
             "images": len(items),
-            # проверенные кадры без объектов — негативные примеры
+            # reviewed frames without objects are the negative examples
             "background_images": sum(1 for item in items if not item.annotations),
             "statuses_included": list(EXPORTABLE_STATUSES),
             "skipped_labels": ctx.skipped_labels,

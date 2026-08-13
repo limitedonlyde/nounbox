@@ -1,6 +1,6 @@
-"""Nounbox SDK — контракт labeler-плагинов.
+"""Nounbox SDK — the labeler plugin contract.
 
-Плагин — это класс, реализующий протокол Labeler. Публикация через entry points:
+A plugin is a class implementing the Labeler protocol. Published via entry points:
 
     [project.entry-points."nounbox.labelers"]
     paddleocr = "my_plugin:PaddleOCRLabeler"

@@ -67,7 +67,7 @@ function SettingsPage() {
 
   const startPoll = useCallback(() => {
     if (pollRef.current !== null) return;
-    // деплой длится минуты: одиночный сетевой сбой не должен убивать опрос
+    // a deploy takes minutes: a single network blip must not kill the poll
     let misses = 0;
     pollRef.current = window.setInterval(async () => {
       try {
@@ -159,7 +159,7 @@ function SettingsPage() {
     } catch (err) {
       fail(err);
     } finally {
-      // «идёт деплой» показывает статус deploying, busy — только сам запрос
+      // "deploy in progress" is the deploying status; busy covers only the request
       setBusy(false);
     }
   };

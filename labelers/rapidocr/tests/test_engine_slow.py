@@ -1,8 +1,8 @@
-"""Прогон реальной модели: pytest -m slow.
+"""Runs the real model: pytest -m slow.
 
-Веса (три onnx, ~13.5 МБ для русского) качаются в RAPIDOCR_MODEL_DIR при первом
-запуске; задайте эту переменную на кешируемый каталог, иначе каждый прогон
-в чистом окружении будет качать их заново.
+The weights (three onnx files, ~13.5 MB for Russian) are downloaded into
+RAPIDOCR_MODEL_DIR on the first run; point that variable at a cached directory,
+otherwise every run in a clean environment downloads them again.
 """
 
 import io
@@ -47,7 +47,7 @@ def render(lines, font, width=1000):
 
 
 def has_glyph(font, char):
-    """Глиф реально рисуется: не пустота и не tofu-квадрат вместо символа."""
+    """Glyph really renders: not blank and not a tofu box instead of the char."""
 
     def rendered(text):
         probe = Image.new("L", (120, 80), 255)
@@ -76,12 +76,12 @@ def test_latin_page_lines(instance):
     font = load_font()
     annotations = instance.predict(render(LATIN_LINES, font), {"lang": "en"})
 
-    assert len(annotations) >= len(LATIN_LINES)  # построчно, не одним блоком
+    assert len(annotations) >= len(LATIN_LINES)  # per line, not one single block
     for annotation in annotations:
         assert annotation.label == "text_line"
         assert len(annotation.geometry) == 4
         assert 0.0 < annotation.confidence <= 1.0
-    assert len({a.confidence for a in annotations}) > 1  # confidence не константа
+    assert len({a.confidence for a in annotations}) > 1  # confidence is not a constant
     assert "HELLO" in " ".join(a.text.upper() for a in annotations)
 
 
@@ -98,7 +98,7 @@ def test_cyrillic_page_lines(instance):
     assert "ИСПОЛНИТЕЛЬ" in text
     assert min(a.confidence for a in annotations) > 0.5
 
-    # полигоны построчные: у каждой строки своя вертикальная полоса
+    # polygons are per line: every line has its own vertical band
     tops = sorted(min(y for _, y in a.geometry) for a in annotations)
     assert tops[-1] - tops[0] > 70
 

@@ -19,12 +19,12 @@ const STATUS_COLORS: Record<AnnotationStatus, string> = {
   rejected: "#e05252",
 };
 
-/** Класс аннотации удалён из проекта — рисуем серым, но не прячем. */
+/** The annotation's class was deleted from the project — draw it gray, do not hide. */
 const UNKNOWN_CLASS_COLOR = "#8a8a8a";
 
 type StatusFilter = "all" | AnnotationStatus;
 
-/** Видимая область в координатах изображения (зум = уменьшение w/h). */
+/** The visible area in image coordinates (zooming in = shrinking w/h). */
 interface Viewport {
   x: number;
   y: number;
@@ -32,7 +32,7 @@ interface Viewport {
   h: number;
 }
 
-/** Ручки: углы и середины сторон. */
+/** Handles: the corners and the midpoints of the sides. */
 type Handle = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
 
 const HANDLES: Handle[] = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
@@ -66,7 +66,7 @@ interface GeometryEdit {
   after: Geometry;
 }
 
-/** Минимальная сторона рамки в пикселях изображения. */
+/** Minimum side of a box, in image pixels. */
 const MIN_BOX = 4;
 const ZOOM_MAX = 20;
 
@@ -81,7 +81,7 @@ const boxGeometry = (b: Box): Geometry => ({
   height: Math.round(b.height),
 });
 
-/** Тянем за ручку: пересчёт краёв с клэмпом к кадру и минимальным размером. */
+/** Dragging a handle: recompute the edges, clamped to the frame and min size. */
 function resizeBox(
   before: Box,
   handle: Handle,
@@ -103,7 +103,7 @@ function resizeBox(
   return { x, y, width: right - x, height: bottom - y };
 }
 
-/** Перенос рамки целиком — не даём уехать за пределы кадра. */
+/** Moving the whole box — we do not let it run outside the frame. */
 function moveBox(before: Box, dx: number, dy: number, imgW: number, imgH: number): Box {
   return {
     ...before,
@@ -139,11 +139,11 @@ function ReviewPage() {
   const [draftRect, setDraftRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // зум/панорама: держим видимую область в координатах изображения
+  // zoom/pan: we keep the visible area in image coordinates
   const [view, setView] = useState<Viewport | null>(null);
-  // текущее перетаскивание: изменение размера, перенос рамки или панорама
+  // the drag in progress: a resize, a box move, or a pan
   const [drag, setDrag] = useState<DragState | null>(null);
-  // стек отмены: до/после геометрии, чтобы Cmd+Z возвращал рамку на место
+  // undo stack: geometry before/after, so that Cmd+Z puts the box back
   const undoStack = useRef<GeometryEdit[]>([]);
   const redoStack = useRef<GeometryEdit[]>([]);
   const [undoDepth, setUndoDepth] = useState(0);
@@ -153,7 +153,7 @@ function ReviewPage() {
   const drawStart = useRef<{ x: number; y: number } | null>(null);
   const spaceHeld = useRef(false);
 
-  // --- загрузка проекта и классов ---
+  // --- loading the project and its classes ---
   useEffect(() => {
     let alive = true;
     Promise.all([
@@ -178,7 +178,7 @@ function ReviewPage() {
     };
   }, [projectId]);
 
-  // --- загрузка изображения ---
+  // --- loading the image ---
   useEffect(() => {
     let alive = true;
     setSelectedId(null);
@@ -214,7 +214,7 @@ function ReviewPage() {
     [isOcr, classByName]
   );
 
-  // --- фильтр: сначала низкоуверенные (очередь ревью) ---
+  // --- filter: least confident first (the review queue) ---
   const filtered = useMemo(
     () =>
       annotations
@@ -239,7 +239,7 @@ function ReviewPage() {
     setDraft(selected?.text ?? "");
   }, [selectedId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // --- действия ---
+  // --- actions ---
   const patch = useCallback(
     async (id: string, body: Parameters<typeof api.updateAnnotation>[1]) => {
       const updated = await api.updateAnnotation(id, body);
@@ -273,7 +273,7 @@ function ReviewPage() {
     setSelectedId((current) => (current === id ? null : current));
   }, []);
 
-  /** Назначить класс аннотации; он же становится классом для новых боксов. */
+  /** Assign a class to the annotation; it also becomes the class for new boxes. */
   const assignClass = useCallback(
     async (id: string, className: string) => {
       setActiveClass(className);
@@ -315,7 +315,7 @@ function ReviewPage() {
     if (image) setView({ x: 0, y: 0, w: image.width, h: image.height });
   }, [image]);
 
-  // при смене изображения сбрасываем зум и стек отмены — они про прошлый кадр
+  // switching images resets the zoom and the undo stack — they are about the old frame
   useEffect(() => {
     if (image) setView({ x: 0, y: 0, w: image.width, h: image.height });
     undoStack.current = [];
@@ -347,7 +347,8 @@ function ReviewPage() {
     }
   }, [patch]);
 
-  /** Кадр пуст и проверен: единственный способ отправить его в датасет фоном. */
+  /** The image is empty and reviewed: the only way to get it into the dataset
+   * as a background example. */
   const markEmpty = useCallback(async () => {
     if (!image) return;
     try {
@@ -361,7 +362,7 @@ function ReviewPage() {
 
   const canDraw = isOcr || activeClass !== null;
 
-  // --- горячие клавиши ---
+  // --- hotkeys ---
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement).tagName;
@@ -391,30 +392,30 @@ function ReviewPage() {
           if (selectedId) void remove(selectedId);
           return;
         case " ":
-          // пробел зажат — курсор превращается в «руку» для панорамы
+          // space held down — the cursor turns into a "hand" for panning
           spaceHeld.current = true;
           if (zoomed) e.preventDefault();
           return;
       }
 
-      // отмена/возврат правки геометрии
+      // undo/redo of a geometry edit
       if ((e.metaKey || e.ctrlKey) && e.code === "KeyZ") {
         e.preventDefault();
         void (e.shiftKey ? redo() : undo());
         return;
       }
 
-      // цифры/буквы — по e.code: работают при CapsLock/Shift и на любой раскладке
+      // digits/letters by e.code: they work with CapsLock/Shift and on any layout
       if (e.metaKey || e.ctrlKey || e.altKey) return;
 
-      // зум с клавиатуры: 0 — вернуть кадр целиком
+      // keyboard zoom: 0 — bring back the whole frame
       if (e.code === "Digit0" || e.code === "Numpad0") {
         resetView();
         return;
       }
 
-      // 1-9 — класс выделенной аннотации (и класс для следующих боксов);
-      // code — чтобы работало на любой раскладке, key — запасной вариант
+      // 1-9 — class of the selected annotation (and class for the next boxes);
+      // code so it works on any layout, key as the fallback
       const digit =
         /^(?:Digit|Numpad)([1-9])$/.exec(e.code) ?? /^([1-9])$/.exec(e.key);
       if (digit) {
@@ -469,8 +470,8 @@ function ReviewPage() {
     canDraw,
   ]);
 
-  // --- координаты, зум, рисование и правка ---
-  /** Клиентские координаты -> координаты изображения с учётом зума. */
+  // --- coordinates, zoom, drawing and editing ---
+  /** Client coordinates -> image coordinates, taking the zoom into account. */
   const toImageCoords = (e: { clientX: number; clientY: number }) => {
     const rect = svgRef.current?.getBoundingClientRect();
     if (!rect || !image || !view) return { x: 0, y: 0 };
@@ -480,7 +481,7 @@ function ReviewPage() {
     };
   };
 
-  /** Зум колесом к точке под курсором, чтобы она осталась на месте. */
+  /** Wheel zoom towards the point under the cursor, so that it stays put. */
   const onWheel = (e: React.WheelEvent) => {
     if (!image || !view) return;
     const factor = e.deltaY < 0 ? 1 / 1.15 : 1.15;
@@ -497,14 +498,14 @@ function ReviewPage() {
     });
   };
 
-  /** Сохранить геометрию и положить правку в стек отмены. */
+  /** Save the geometry and push the edit onto the undo stack. */
   const commitGeometry = useCallback(
     async (id: string, before: Geometry, after: Geometry) => {
       try {
         await patch(id, { geometry: after });
       } catch (err) {
         setError(errorText(err));
-        // сервер не принял — возвращаем рамку на место, чтобы экран не врал
+        // the server refused it — put the box back so the screen does not lie
         setAnnotations((as) =>
           as.map((a) => (a.id === id ? { ...a, geometry: before } : a))
         );
@@ -542,7 +543,7 @@ function ReviewPage() {
       setDraftRect({ ...drawStart.current, w: 0, h: 0 });
       return;
     }
-    // панорама: средняя кнопка или зажатый пробел при увеличении
+    // pan: middle button, or space held down while zoomed in
     if (view && (e.button === 1 || spaceHeld.current) && zoomed) {
       e.preventDefault();
       setDrag({
@@ -597,7 +598,7 @@ function ReviewPage() {
             image.height
           );
     setDrag({ ...drag, box });
-    // рисуем оптимистично: рамка должна ехать за курсором без задержки сети
+    // draw optimistically: the box must follow the cursor with no network lag
     setAnnotations((as) =>
       as.map((a) => (a.id === drag.id ? { ...a, geometry: boxGeometry(box) } : a))
     );
@@ -610,7 +611,7 @@ function ReviewPage() {
       if (finished.mode !== "pan") {
         const after = boxGeometry(finished.box);
         const before = boxGeometry(finished.before);
-        // клик без движения не считаем правкой — иначе стек отмены засорится
+        // a click with no movement is not an edit — it would clutter the undo stack
         if (JSON.stringify(after) !== JSON.stringify(before)) {
           await commitGeometry(finished.id, before, after);
         }
@@ -622,7 +623,7 @@ function ReviewPage() {
     const rect = draftRect;
     setDraftRect(null);
     setDrawMode(false);
-    if (rect.w < 8 || rect.h < 8) return; // случайный клик
+    if (rect.w < 8 || rect.h < 8) return; // stray click
     const geometry: Geometry = {
       type: "bbox",
       x: Math.round(rect.x),
@@ -653,10 +654,10 @@ function ReviewPage() {
   const done = annotations.filter(
     (a) => a.status === "accepted" || a.status === "edited"
   ).length;
-  // подписи в SVG живут в координатах картинки — размер считаем от неё
+  // SVG labels live in image coordinates — so their size is derived from it
   const labelSize = Math.max(10, Math.round(Math.max(image.width, image.height) / 55));
-  // ручки задаём в координатах изображения, но масштабируем обратно по зуму,
-  // чтобы на любом увеличении они оставались одного размера на экране
+  // handles are sized in image coordinates but scaled back by the zoom, so that
+  // at any zoom level they stay the same size on screen
   const handleSize = ((view?.w ?? image.width) / image.width) * (labelSize * 0.8);
   const activeColor = activeClass
     ? classByName.get(activeClass)?.color ?? UNKNOWN_CLASS_COLOR
@@ -686,8 +687,8 @@ function ReviewPage() {
         <button onClick={() => void undo()} disabled={undoDepth === 0} title="Cmd+Z">
           ↶ undo
         </button>
-        {/* Кадр без объектов иначе не попадёт в датасет: размечать нечего,
-            а фоновые примеры детектору нужны */}
+        {/* An image with no objects would otherwise never reach the dataset:
+            there is nothing to label, yet the detector needs background examples */}
         {annotations.length === 0 && (
           <button
             className={image?.reviewed ? "active" : ""}
@@ -798,7 +799,7 @@ function ReviewPage() {
                       }}
                     />
                   )}
-                  {/* ручки — только у выделенной рамки, иначе экран рябит */}
+                  {/* handles only on the selected box — otherwise the screen is noisy */}
                   {isSelected &&
                     !drawMode &&
                     a.geometry.type === "bbox" &&

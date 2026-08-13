@@ -1,4 +1,4 @@
-"""GET /labelers: установленные плагины + доступность GPU из настроек."""
+"""GET /labelers: installed plugins + GPU availability taken from the settings."""
 
 from sqlalchemy import select
 
@@ -109,8 +109,8 @@ async def test_detection_engines_are_marked_by_task(client, monkeypatch):
 
 
 async def test_owlv2_listed_even_if_plugin_missing(client, monkeypatch):
-    """Дефолтный движок детекции должен быть виден с причиной, иначе список
-    движков detection-проекта пуст без объяснений."""
+    """The default detection engine has to stay visible with a reason, otherwise
+    the engine list of a detection project is empty with no explanation."""
     install(monkeypatch, "rapidocr")
 
     items = {i["name"]: i for i in (await client.get("/api/v1/labelers")).json()}

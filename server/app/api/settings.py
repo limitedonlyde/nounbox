@@ -1,6 +1,6 @@
-"""Настройки инсталляции: токен Modal и кнопка «Подключить GPU».
+"""Instance settings: the Modal token and the "Connect GPU" button.
 
-Секрет токена наружу не отдаётся ни в одной ручке — только маска token_id.
+The token secret is never handed out by any endpoint, only the masked token_id.
 """
 
 from datetime import datetime, timezone
@@ -40,7 +40,7 @@ async def put_modal_token(
 
     row = await settings_store.get_or_create(session)
     if row.modal_token_id != token_id:
-        # другой аккаунт — прежний endpoint к нему не относится
+        # a different account — the previous endpoint has nothing to do with it
         row.gpu_status = GpuStatus.NOT_CONFIGURED
         row.gpu_endpoint_url = None
         row.gpu_error = None
@@ -68,12 +68,13 @@ async def delete_modal_token(session: AsyncSession = Depends(get_session)):
 
 @router.post("/gpu/deploy", response_model=JobOut, status_code=202, dependencies=[Depends(require_access)])
 async def deploy_gpu(request: Request, session: AsyncSession = Depends(get_session)):
-    """Развернуть GPU-рецепт в аккаунт Modal пользователя. Прогресс — в GET /jobs/{id}."""
+    """Deploy the GPU recipe into the user's Modal account. Progress: GET /jobs/{id}."""
     row = await settings_store.get_or_create(session)
     if not (row.modal_token_id and row.modal_token_secret_encrypted):
         raise HTTPException(400, "Save a Modal token in the settings first")
 
-    # payload — только неsecret-данные: токен воркер берёт из настроек сам
+    # payload: non-secret data only — the worker fetches the token from the
+    # settings on its own
     job = Job(
         type=JobType.DEPLOY_GPU,
         payload={"app_name": app_settings.modal_gpu_app_name},

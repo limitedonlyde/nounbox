@@ -1,39 +1,39 @@
-"""Modal-рецепт: PaddleOCR PP-OCRv5 (кириллица) на GPU как HTTP-labeler backend.
+"""Modal recipe: PaddleOCR PP-OCRv5 (Cyrillic) on GPU as an HTTP-labeler backend.
 
-Реализует конвенцию labelers/http: POST /predict (image bytes) ->
-{"annotations": [{geometry, label, text, confidence}]}. Конфиг пробрасывается
-заголовком X-Labeler-Config ({"lang": "ru"}).
+Implements the labelers/http convention: POST /predict (image bytes) ->
+{"annotations": [{geometry, label, text, confidence}]}. Config is passed through
+in the X-Labeler-Config header ({"lang": "ru"}).
 
-Модели (paddleocr 3.7, lang + ocr_version="PP-OCRv5"); детектор всегда
-PP-OCRv5_server_det, rec выбирается по lang:
-  ru | uk | be              -> eslav_PP-OCRv5_mobile_rec      (дефолт, lang="ru")
+Models (paddleocr 3.7, lang + ocr_version="PP-OCRv5"); the detector is always
+PP-OCRv5_server_det, rec is chosen by lang:
+  ru | uk | be              -> eslav_PP-OCRv5_mobile_rec      (default, lang="ru")
   bg | kk | ky | mk | tt | … -> cyrillic_PP-OCRv5_mobile_rec
   en                        -> en_PP-OCRv5_mobile_rec
   ch | japan | chinese_cht   -> PP-OCRv5_server_rec
-Явная пара моделей — config {"det_model": ..., "rec_model": ...} (например,
-rec_model="cyrillic_PP-OCRv5_mobile_rec" для русского вместо eslav).
-ocr_version задаётся явно: без него paddleocr 3.7 уводит en/латиницу в PP-OCRv6,
-где кириллицы нет вообще.
-Полигоны построчные (4 точки на строку), confidence — реальный скор распознавания.
-Порог text_rec_score_thresh=0.0: строки, которые движок не смог прочитать, не
-выбрасываются молча, а уходят человеку в Review UI.
+An explicit model pair — config {"det_model": ..., "rec_model": ...} (e.g.
+rec_model="cyrillic_PP-OCRv5_mobile_rec" for Russian instead of eslav).
+ocr_version is set explicitly: without it paddleocr 3.7 routes en/Latin to
+PP-OCRv6, which has no Cyrillic at all.
+Polygons are per line (4 points per line), confidence is the real recognition
+score. The text_rec_score_thresh=0.0 threshold keeps lines the engine could not
+read from being dropped silently — they go to a human in the Review UI instead.
 
-Автодеплой платформой («Настройки» -> «Подключить GPU»): объект `app` лежит на
-уровне модуля, импорт не имеет побочных эффектов и не читает локальные файлы,
-деплой — modal.runner.deploy_app(app, name=..., client=...). Файл самодостаточен
-(в контейнер Modal монтируется РОВНО этот один .py), поэтому никаких импортов
-из монорепо здесь быть не должно.
+Auto-deploy from the platform (Settings -> "Connect GPU"): the `app` object sits
+at module level, importing has no side effects and reads no local files, and the
+deploy call is modal.runner.deploy_app(app, name=..., client=...). The file is
+self-contained (EXACTLY this one .py is mounted into the Modal container), so
+there must be no imports from the monorepo here.
 
-Токен доступа (опционально): если у процесса, который деплоит, задана переменная
-NOUNBOX_GPU_TOKEN, она запекается в Secret приложения и /predict начинает
-требовать `Authorization: Bearer <token>` (в HTTP-labeler это config.api_key).
-Переменной нет — эндпоинт открыт по неугадываемому URL, как раньше.
+Access token (optional): if the deploying process has NOUNBOX_GPU_TOKEN set, it
+is baked into the app's Secret and /predict starts requiring
+`Authorization: Bearer <token>` (config.api_key in the HTTP labeler). Without
+the variable the endpoint stays open behind an unguessable URL, as before.
 
-Деплой:  NOUNBOX_GPU_TOKEN=... modal deploy deploy/modal/paddleocr_modal.py
+Deploy:  NOUNBOX_GPU_TOKEN=... modal deploy deploy/modal/paddleocr_modal.py
 Endpoint: https://<workspace>--nounbox-paddleocr-fastapi-app.modal.run/predict
-— подставляется в HTTP-labeler как config.endpoint.
+— goes into the HTTP labeler as config.endpoint.
 
-Остановить: modal app stop nounbox-paddleocr
+Stop it: modal app stop nounbox-paddleocr
 """
 
 import os
@@ -49,7 +49,7 @@ DEFAULT_OCR_VERSION = "PP-OCRv5"
 DEFAULT_DET_MODEL = "PP-OCRv5_server_det"
 DEFAULT_REC_MODEL = "eslav_PP-OCRv5_mobile_rec"
 
-# сквозные параметры детекции/распознавания, которые paddleocr принимает на predict
+# pass-through detection/recognition parameters that paddleocr accepts on predict
 PREDICT_PARAMS = (
     "text_det_limit_type",
     "text_det_limit_side_len",
@@ -63,28 +63,29 @@ app = modal.App(APP_NAME)
 
 model_cache = modal.Volume.from_name("nounbox-paddlex-cache", create_if_missing=True)
 
-# токен читается у процесса-деплойщика; нет переменной -> ключ в Secret не попадает
+# the token is read from the deploying process; no variable -> no key in the Secret
 auth_secret = modal.Secret.from_dict({TOKEN_ENV: os.environ.get(TOKEN_ENV) or None})
 
 image = (
     modal.Image.from_registry(
-        # paddlepaddle-gpu 3.x требует Python >= 3.12
+        # paddlepaddle-gpu 3.x requires Python >= 3.12
         "nvidia/cuda:12.6.0-runtime-ubuntu22.04", add_python="3.12"
     )
     .apt_install("libgl1", "libglib2.0-0", "libgomp1")
     .pip_install(
-        # GPU-сборки paddle 3.x публикуются в официальном индексе Paddle, не на PyPI
+        # paddle 3.x GPU builds are published in Paddle's own index, not on PyPI
         "paddlepaddle-gpu>=3.0,<4",
         extra_index_url="https://www.paddlepaddle.org.cn/packages/stable/cu126/",
     )
     .pip_install(
-        # версия зафиксирована: на ней проверена карта lang -> PP-OCRv5-модель
+        # version pinned: the lang -> PP-OCRv5 model map was verified on it
         "paddleocr==3.7.0",
         "fastapi[standard]>=0.115",
         "Pillow>=10.0",
         "numpy>=1.26",
     )
-    # веса тянутся с HuggingFace (быстрее bcebos из регионов Modal) в /root/.paddlex
+    # weights come from HuggingFace into /root/.paddlex — faster than bcebos
+    # from Modal's own regions
     .env({"PADDLE_PDX_MODEL_SOURCE": "huggingface", "PYTHONUNBUFFERED": "1"})
 )
 
@@ -113,8 +114,8 @@ def fastapi_app():
 
     token = os.environ.get(TOKEN_ENV, "").strip()
 
-    # при включённом токене не публикуем и автодокументацию: она раскрывает
-    # контракт эндпоинта, который мы только что закрыли
+    # with the token on we also drop the auto-generated docs: they spell out
+    # the contract of the endpoint we have just locked down
     web = FastAPI(docs_url=None, redoc_url=None, openapi_url=None) if token else FastAPI()
     engines: dict[tuple, object] = {}
     lock = threading.Lock()
@@ -141,8 +142,8 @@ def fastapi_app():
         return config
 
     def model_kwargs(config: dict) -> dict:
-        # явные имена моделей (напр. rec_model=cyrillic_PP-OCRv5_mobile_rec)
-        # отключают в paddleocr автоподбор по lang, поэтому задаём пару целиком
+        # explicit model names (e.g. rec_model=cyrillic_PP-OCRv5_mobile_rec)
+        # turn off paddleocr's lang auto-pick, so we set the whole pair here
         det_model, rec_model = config.get("det_model"), config.get("rec_model")
         if det_model or rec_model:
             return {
@@ -163,10 +164,10 @@ def fastapi_app():
                 engines[key] = PaddleOCR(
                     use_doc_orientation_classify=False,
                     use_doc_unwarping=False,
-                    # классификатор ориентации строки переворачивает длинные
-                    # кириллические строки на 180 градусов -> выключен
+                    # the textline orientation classifier flips long Cyrillic
+                    # lines by 180 degrees -> turned off
                     use_textline_orientation=False,
-                    # 0.0: не терять строки, которые движок не смог прочитать
+                    # 0.0: do not lose lines the engine could not read
                     text_rec_score_thresh=0.0,
                     device="gpu",
                     **models,
@@ -177,8 +178,8 @@ def fastapi_app():
         try:
             arr = np.asarray(PILImage.open(io.BytesIO(body)).convert("RGB"))
         except Exception:
-            # UnidentifiedImageError/OSError/ValueError, а также
-            # DecompressionBombError — она наследуется прямо от Exception
+            # UnidentifiedImageError/OSError/ValueError, and also
+            # DecompressionBombError — it inherits straight from Exception
             raise HTTPException(400, "Body is not a readable image")
 
         try:
@@ -186,7 +187,7 @@ def fastapi_app():
         except HTTPException:
             raise
         except Exception as exc:
-            # неизвестное имя модели или язык — вина запроса, не сервера
+            # unknown model name or language — the request's fault, not ours
             raise HTTPException(
                 400, f"Bad model config {models}: {type(exc).__name__}: {exc}"
             )
@@ -196,7 +197,8 @@ def fastapi_app():
             inner = data.get("res", data) if isinstance(data, dict) else data
             texts = inner.get("rec_texts", [])
             scores = inner.get("rec_scores", [])
-            # rec_polys выровнены с rec_texts/rec_scores; dt_polys — все детекции
+            # rec_polys lines up with rec_texts/rec_scores; dt_polys holds
+            # all detections
             polys = inner.get("rec_polys")
             if polys is None:
                 polys = inner.get("dt_polys", [])

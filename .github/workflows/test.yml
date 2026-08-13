@@ -1,6 +1,6 @@
-# Гейт качества перед публикацией образов: publish.yml ждёт этот workflow,
-# иначе опечатка в импорте уезжает в :latest и ломает установку всем, кто
-# запускается из готовых образов.
+# Quality gate before images are published: publish.yml waits on this workflow,
+# otherwise a typo in an import ships to :latest and breaks the install for
+# everyone who runs from the prebuilt images.
 name: test
 
 on:
@@ -21,8 +21,8 @@ jobs:
           cache: pip
 
       - name: Install server and plugins
-        # torch — CPU-колесом: дефолтное тянет CUDA на гигабайты, а тесты
-        # движков не запускают модели (они помечены slow)
+        # torch from the CPU wheel: the default one drags in gigabytes of CUDA,
+        # and the engine tests never run the models (they are marked slow)
         run: |
           python -m pip install --upgrade pip
           pip install --index-url https://download.pytorch.org/whl/cpu "torch>=2.2"

@@ -1,4 +1,4 @@
-"""Типы данных контракта. Зависимостей нет — только stdlib."""
+"""Contract data types. No dependencies — stdlib only."""
 
 from __future__ import annotations
 
@@ -8,17 +8,17 @@ from typing import Any, TypeAlias
 
 
 class Capability(str, Enum):
-    """Что умеет labeler."""
+    """What a labeler can do."""
 
-    DETECTION = "detection"  # боксы/полигоны текста
-    RECOGNITION = "recognition"  # транскрипция внутри геометрии
-    LAYOUT = "layout"  # структура документа (заголовки, таблицы...)
-    KIE = "kie"  # ключевые поля (attrs)
+    DETECTION = "detection"  # boxes/polygons around text
+    RECOGNITION = "recognition"  # transcription inside the geometry
+    LAYOUT = "layout"  # document structure (headings, tables...)
+    KIE = "kie"  # key fields (attrs)
 
 
 @dataclass
 class BBox:
-    """Прямоугольник в абсолютных пикселях (верхний левый угол — начало)."""
+    """Rectangle in absolute pixels (origin is the top-left corner)."""
 
     x: float
     y: float
@@ -26,19 +26,19 @@ class BBox:
     height: float
 
 
-# Полигон — список точек [x, y] в абсолютных пикселях, по часовой стрелке.
+# A polygon is a list of [x, y] points in absolute pixels, clockwise.
 Polygon: TypeAlias = list[tuple[float, float]]
 
 
 @dataclass
 class Annotation:
-    """Универсальная аннотация — покрывает detection/recognition/layout/KIE.
+    """Universal annotation — covers detection/recognition/layout/KIE.
 
-    - geometry: BBox | Polygon — где находится объект
-    - label: тип ("text_line", "paragraph", "table", "title", ...)
-    - text: транскрипция (recognition), если есть
-    - attrs: произвольные атрибуты, для KIE — {"field": "total"}
-    - confidence: уверенность движка 0..1 (для bulk-accept и очередей ревью)
+    - geometry: BBox | Polygon — where the object is
+    - label: type ("text_line", "paragraph", "table", "title", ...)
+    - text: transcription (recognition), if any
+    - attrs: arbitrary attributes, for KIE — {"field": "total"}
+    - confidence: engine confidence 0..1 (for bulk-accept and review queues)
     """
 
     geometry: BBox | Polygon

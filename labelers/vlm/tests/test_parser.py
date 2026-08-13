@@ -1,4 +1,4 @@
-"""Тесты robust-парсера VLM-ответов — без сети, только чистые функции."""
+"""Tests for the robust parser of VLM replies — no network, pure functions only."""
 
 import json
 
@@ -37,7 +37,7 @@ def test_markdown_fences():
 
 
 def test_prose_around_array_with_brackets():
-    # Ломало жадный regex: он захватывал от первой '[' до последней ']'
+    # Used to break the greedy regex: it grabbed from the first '[' to the last ']'
     content = (
         "Here is the result [as requested]:\n"
         '[{"bbox": [10, 20, 110, 40], "text": "line"}]\n'

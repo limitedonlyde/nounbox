@@ -1,4 +1,4 @@
-"""Воркер: резолв конфига движка и задача развёртывания GPU."""
+"""Worker: engine config resolution and the GPU deployment job."""
 
 import uuid
 
@@ -56,8 +56,8 @@ def install(monkeypatch, *labelers: RecordingLabeler) -> None:
 async def make_project_with_image(
     session_factory, task_type: TaskType = TaskType.OCR
 ) -> uuid.UUID:
-    """Движки в этом файле — OCR-овые, поэтому проект по умолчанию ocr:
-    detection-проект требует классов (см. test_autolabel_classes.py)."""
+    """The engines in this file are OCR ones, so the project defaults to ocr:
+    a detection project requires classes (see test_autolabel_classes.py)."""
     async with session_factory() as session:
         project = Project(name="p", description="", task_type=task_type)
         session.add(project)
@@ -107,7 +107,7 @@ async def test_modal_gpu_requested_but_not_ready_fails_job(
     project_id = await make_project_with_image(session_factory)
     job_id = await enqueue_autolabel(session_factory, project_id, "modal_gpu")
 
-    await tasks.run_autolabel({}, job_id)  # воркер не должен упасть
+    await tasks.run_autolabel({}, job_id)  # the worker must not crash
 
     job = await get_job(session_factory, job_id)
     assert job.status == JobStatus.FAILED
@@ -291,7 +291,7 @@ def test_resolved_recipe_exists():
 
 
 def test_recipe_is_self_contained():
-    # Modal монтирует ровно один .py — локальных импортов в рецепте быть не должно
+    # Modal mounts exactly one .py — the recipe must contain no local imports
     source = modal_deploy.recipe_path().read_text()
 
     assert "modal.App(" in source

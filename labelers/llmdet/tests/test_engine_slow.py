@@ -1,14 +1,15 @@
-"""Прогон реальной модели: pytest -m slow.
+"""Runs the real model: pytest -m slow.
 
-Веса качаются в OVD_MODEL_DIR при первом запуске (llmdet_tiny ~0.7 ГБ); задайте
-эту переменную на кешируемый каталог, иначе каждый прогон в чистом окружении
-будет качать их заново. Тесты идут на tiny — форвард и разбор выхода у base
-те же, а весов и памяти вдвое меньше.
+The weights are downloaded into OVD_MODEL_DIR on the first run (llmdet_tiny
+~0.7 GB); point that variable at a cached directory, or every run in a clean
+environment downloads them again. The tests use tiny — the forward pass and the
+output parsing are the same as in base, at half the weights and memory.
 
-Проверяется не «нашлась ли кошка» (синтетическая картинка — не фотография,
-качество меряется отдельным eval-набором), а инварианты интеграции: промпт
-режется на классы ровно по числу классов, ярлык рамки — имя класса ПРОЕКТА
-в исходном регистре, координаты в пикселях этой картинки, порог реально режет.
+What is checked is not "was the cat found" (a synthetic image is not a photo,
+quality is measured by a separate eval set) but the integration invariants: the
+prompt splits into exactly as many class spans as there are classes, a box label
+is the PROJECT class name in its original case, the coordinates are pixels of
+this image, and the threshold really does prune.
 """
 
 import io
@@ -24,7 +25,7 @@ pytestmark = pytest.mark.slow
 
 CLASSES = ["Cat", "Traffic Light", "Wooden Spoon"]
 
-# ровно MAX_CLASSES реальных однословных имён: словарь eval-набора плюс бытовые предметы
+# exactly MAX_CLASSES real one-word names: eval set vocabulary plus household items
 TYPICAL_CLASSES = """
 airplane armchair ashtray backpack banana bed bench bicycle bird bookcase bowl
 broom bus cabinet car chair chandelier clock cup dishwasher dog doormat dumpster
@@ -39,7 +40,7 @@ wallet watch window zebra
 
 
 def scene(width=640, height=480):
-    """Пёстрая синтетика: модели есть за что зацепиться, но это не фотография."""
+    """Colorful synthetic scene: something for the model to latch onto, not a photo."""
     image = Image.new("RGB", (width, height), "white")
     draw = ImageDraw.Draw(image)
     draw.rectangle([40, 40, 240, 300], fill="#3b82f6")
@@ -60,19 +61,19 @@ def engine(instance):
     return instance._engine(mod.MODEL_ALIASES["tiny"])
 
 
-# --- то, ради чего стоит лимит: реальные числа модели ---
+# --- the reason the limit exists: the model's real numbers ---
 
 
 def test_model_text_limit_matches_our_constant(engine):
-    """Если transformers/веса поменяют max_text_len — узнаем здесь, а не в проде."""
+    """A max_text_len change in transformers/weights surfaces here, not in prod."""
     assert engine.max_text_len == mod.DEFAULT_MAX_TEXT_TOKENS
 
 
 def test_max_classes_of_typical_names_fit_the_prompt(engine):
-    """MAX_CLASSES однословных классов влезают в 256 токенов — лимит не с потолка."""
+    """MAX_CLASSES one-word classes fit in 256 tokens — the limit is not a guess."""
     assert len(TYPICAL_CLASSES) == mod.MAX_CLASSES
     tokens = engine.processor.tokenizer(mod.build_prompt(TYPICAL_CLASSES))["input_ids"]
-    assert len(tokens) <= engine.max_text_len  # 212 из 256
+    assert len(tokens) <= engine.max_text_len  # 212 of 256
 
 
 def test_prompt_splits_into_exactly_one_span_per_class(engine):
@@ -89,15 +90,15 @@ def test_prompt_splits_into_exactly_one_span_per_class(engine):
 
 
 def test_too_long_prompt_raises_before_the_forward(engine):
-    """Те же 91 класса, но двусловные, уже не влезают — ради этого второй рубеж."""
+    """The same 91 classes, but two-word, no longer fit — hence the second gate."""
     classes = [f"wooden {name}" for name in TYPICAL_CLASSES]
     tokens = engine.processor.tokenizer(mod.build_prompt(classes))["input_ids"]
-    assert len(tokens) > engine.max_text_len  # именно этот случай мы и защищаем
+    assert len(tokens) > engine.max_text_len  # exactly the case we guard against
     with pytest.raises(ValueError, match="tokens"):
         engine.detect(Image.new("RGB", (64, 64)), classes, 0.35)
 
 
-# --- форвард ---
+# --- the forward pass ---
 
 
 def test_predict_returns_valid_detection_annotations(instance):
@@ -108,7 +109,7 @@ def test_predict_returns_valid_detection_annotations(instance):
 
     for annotation in annotations:
         assert isinstance(annotation.geometry, BBox)
-        assert annotation.label in CLASSES  # исходный регистр классов проекта
+        assert annotation.label in CLASSES  # the project classes' original case
         assert annotation.text is None
         assert 0.0 < annotation.confidence <= 1.0
         assert annotation.geometry.width >= mod.MIN_BOX_SIDE
@@ -130,7 +131,7 @@ def test_score_threshold_prunes_real_output(instance):
     high = instance.predict(
         image, {"classes": CLASSES, "model": "tiny", "score_threshold": 0.9}
     )
-    assert low  # на пороге 0.05 модель всегда что-то предлагает
+    assert low  # at a 0.05 threshold the model always proposes something
     assert len(high) <= len(low)
     assert all(a.confidence >= 0.9 for a in high)
 
@@ -152,4 +153,4 @@ def test_engine_is_loaded_once_across_predicts(instance):
     instance.predict(scene(), {"classes": ["Cat"], "model": "tiny"})
     loaded = dict(instance._engines)
     instance.predict(scene(), {"classes": ["Cat"], "model": "tiny"})
-    assert instance._engines == loaded  # те же объекты: второй загрузки не было
+    assert instance._engines == loaded  # same objects: there was no second load

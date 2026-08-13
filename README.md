@@ -71,7 +71,7 @@ advance — `microwave oven` and `slow cooker` work the same way `person` does.
 
 **Check the machine's work, do not redo it.** The queue serves the least
 confident boxes first. Drag a handle to fix geometry, press a digit to change
-the class, `A` to accept. The colour of a box is its class; the count next to
+the class, `A` to accept. The color of a box is its class; the count next to
 each class is how many are on this image.
 
 ![Review page: boxes, handles, class legend](docs/review.jpg)
@@ -167,7 +167,7 @@ an engine does on *your* photos.
 One finding worth reusing elsewhere: the stock
 `post_process_grounded_object_detection` in `transformers` keeps only the
 best-scoring class per box, which silently dropped 12% of detections in our runs
-by relabeling them with a neighbouring class (`kitchen sink` → `sink`,
+by relabeling them with a neighboring class (`kitchen sink` → `sink`,
 `table lamp` → `lamp`). Emitting boxes per query instead recovers all of them and
 makes predictions independent of how many classes you have.
 

@@ -1,33 +1,36 @@
-"""RapidOCR labeler: построчная детекция + распознавание на CPU (onnxruntime).
+"""RapidOCR labeler: per-line detection + recognition on CPU (onnxruntime).
 
-Дефолтный движок платформы — работает сразу после `docker compose up`, без GPU,
-аккаунтов и ключей. Отдаёт построчные полигоны (4 точки TL->TR->BR->BL, на
-перекошенном сканe — настоящие наклонные четырёхугольники) и РЕАЛЬНЫЙ
-confidence: средняя softmax-вероятность символов из CTC-декодера (не константа).
+The platform's default engine — works right after `docker compose up`, with no
+GPU, no accounts and no keys. Returns per-line polygons (4 points
+TL->TR->BR->BL; on a skewed scan, genuinely slanted quadrilaterals) and a REAL
+confidence: the mean softmax probability of the characters from the CTC decoder
+(not a constant).
 
 Config:
-    lang: str = "ru"            — код языка -> rec-модель PP-OCRv5 (см. LANG_ALIASES)
-    min_confidence: float = 0.0 — отсечь строки ниже порога; 0.0 отдаёт человеку всё,
-                                  включая то, что движок прочитать не смог
-    box_thresh: float | None    — порог DB-детекции (None = дефолт движка)
-    unclip_ratio: float | None  — раздутие контура строки (None = дефолт движка)
-    max_pixels: int             — лимит площади картинки (дефолт из RAPIDOCR_MAX_PIXELS)
+    lang: str = "ru"            — language code -> PP-OCRv5 rec model (see LANG_ALIASES)
+    min_confidence: float = 0.0 — drop lines below the threshold; 0.0 gives the human
+                                  everything, including what the engine could not read
+    box_thresh: float | None    — DB detection threshold (None = engine default)
+    unclip_ratio: float | None  — line contour expansion (None = engine default)
+    max_pixels: int             — image area limit (default from RAPIDOCR_MAX_PIXELS)
 
-Кеш весов — RAPIDOCR_MODEL_DIR (дефолт /data/rapidocr-models, под docker volume;
-если каталог не создать — ~/.cache/rapidocr-models). Для русского это три onnx
-на 13.5 МБ, качаются один раз, дальше движок работает офлайн.
+Weights are cached in RAPIDOCR_MODEL_DIR (default /data/rapidocr-models, on a
+docker volume; if that directory cannot be created — ~/.cache/rapidocr-models).
+For Russian that is three onnx files, 13.5 MB, downloaded once; after that the
+engine runs offline.
 
-Параметры движка подобраны замерами, менять с осторожностью:
-- Global.text_score=0.0: дефолт 0.5 МОЛЧА выбрасывает строки, которые движок не
-  смог прочитать. Для платформы разметки это худшее поведение — человек не увидит
-  того, что нужно исправить. Порог платформы — min_confidence, он явный.
-- Global.use_cls=False: дефолтный классификатор ориентации строки переворачивает
-  длинные кириллические строки на 180° (4 мусорные строки из 16 на плотном A4)
-  и при этом замедляет прогон.
-- Det.limit_type="max" + limit_side_len=1600: дефолт "min"/736 растягивает мелкие
-  кропы и дробит строки на отдельные слова (51 полигон вместо 8).
-- Rec.lang_type: бандл-модели PP-OCRv6 кириллицу не распознают вообще, поэтому
-  rec/det берутся из PP-OCRv5 явно.
+The engine parameters were picked by measurement, change them with care:
+- Global.text_score=0.0: the default 0.5 SILENTLY throws away lines the engine
+  could not read. For a labeling platform that is the worst possible behavior —
+  the human never sees what has to be fixed. The platform's own threshold is
+  min_confidence, and it is explicit.
+- Global.use_cls=False: the default text line orientation classifier flips long
+  Cyrillic lines by 180° (4 garbage lines out of 16 on a dense A4 page) and on
+  top of that slows the run down.
+- Det.limit_type="max" + limit_side_len=1600: the default "min"/736 upscales small
+  crops and breaks lines apart into separate words (51 polygons instead of 8).
+- Rec.lang_type: the bundled PP-OCRv6 models do not recognize Cyrillic at all, so
+  rec/det are taken from PP-OCRv5 explicitly.
 """
 
 from __future__ import annotations
@@ -51,12 +54,12 @@ ENV_MAX_PIXELS = "RAPIDOCR_MAX_PIXELS"
 DEFAULT_MODEL_DIR = "/data/rapidocr-models"
 FALLBACK_MODEL_DIR = Path.home() / ".cache" / "rapidocr-models"
 
-# ingest нормализует страницы до 4096 по длинной стороне (~16.8 Мп) — лимит с запасом
+# ingest normalizes pages to 4096 px on the long side (~16.8 MP) — generous limit
 DEFAULT_MAX_PIXELS = 40_000_000
 
 DEFAULT_LANG = "ru"
 
-# значения LangRec из rapidocr 3.9.x — доступные rec-модели PP-OCRv5
+# LangRec values from rapidocr 3.9.x — the available PP-OCRv5 rec models
 REC_LANGS = frozenset(
     {
         "arabic",
@@ -78,7 +81,7 @@ REC_LANGS = frozenset(
     }
 )
 
-# коды языков UI -> rec-модель; значение из REC_LANGS проходит как есть
+# UI language codes -> rec model; a value from REC_LANGS passes through as is
 LANG_ALIASES = {
     "be": "cyrillic",
     "bg": "cyrillic",
@@ -110,7 +113,7 @@ LANG_ALIASES = {
 
 
 def resolve_rec_lang(lang: str | None) -> str:
-    """Код языка из config -> имя rec-модели RapidOCR."""
+    """Language code from config -> RapidOCR rec model name."""
     key = str(lang or DEFAULT_LANG).strip().lower().replace("_", "-")
     rec_lang = LANG_ALIASES.get(key, key)
     if rec_lang not in REC_LANGS:
@@ -120,7 +123,7 @@ def resolve_rec_lang(lang: str | None) -> str:
 
 
 def model_dir() -> str:
-    """Каталог кеша весов: env -> дефолт (docker volume) -> ~/.cache."""
+    """Weight cache directory: env -> default (docker volume) -> ~/.cache."""
     path = Path(os.environ.get(ENV_MODEL_DIR) or DEFAULT_MODEL_DIR)
     try:
         path.mkdir(parents=True, exist_ok=True)
@@ -137,7 +140,7 @@ def model_dir() -> str:
 
 
 def max_pixels(config: dict) -> int:
-    """Лимит площади изображения: config -> env -> дефолт."""
+    """Image area limit: config -> env -> default."""
     raw = config.get("max_pixels") or os.environ.get(ENV_MAX_PIXELS) or DEFAULT_MAX_PIXELS
     value = int(raw)
     if value <= 0:
@@ -146,10 +149,10 @@ def max_pixels(config: dict) -> int:
 
 
 def probe_image(image: bytes, limit: int) -> tuple[int, int]:
-    """Размер картинки по заголовку — без декодирования пикселей.
+    """Image size from the header — without decoding the pixels.
 
-    Заодно превращает битые байты во внятную ошибку: сам rapidocr падает
-    UnidentifiedImageError без указания на то, кто и что ему передал.
+    It also turns corrupt bytes into a comprehensible error: rapidocr itself
+    dies with UnidentifiedImageError, saying nothing about who passed it what.
     """
     if not image:
         raise ValueError("rapidocr: empty image payload")
@@ -174,9 +177,10 @@ def probe_image(image: bytes, limit: int) -> tuple[int, int]:
 
 
 def to_polygon(box: Iterable[Sequence[float]]) -> Polygon | None:
-    """Точки как есть: rapidocr отдаёт TL, TR, BR, BL — уже по часовой (контракт SDK).
+    """Points as-is: rapidocr returns TL, TR, BR, BL — already clockwise (SDK contract).
 
-    Координаты — в пикселях ИСХОДНОЙ картинки даже при внутреннем даунскейле.
+    Coordinates are in pixels of the ORIGINAL image even when the engine
+    downscales internally.
     """
     points: Polygon = [(float(x), float(y)) for x, y in box]
     return points if len(points) >= 3 else None
@@ -188,7 +192,7 @@ def to_annotations(
     scores,
     min_confidence: float = 0.0,
 ) -> list[Annotation]:
-    """RapidOCROutput -> аннотации SDK. Пустая страница (boxes=None) -> пустой список."""
+    """RapidOCROutput -> SDK annotations. Empty page (boxes=None) -> empty list."""
     if boxes is None or texts is None or scores is None:
         return []
 
@@ -232,7 +236,7 @@ class RapidOCRLabeler:
         self._engines: dict[str, object] = {}  # rec_lang -> RapidOCR instance
         self._lock = threading.Lock()
 
-    # --- инициализация движка (лениво, один раз на rec-модель) ---
+    # --- engine initialization (lazily, once per rec model) ---
 
     def _engine(self, config: dict):
         rec_lang = resolve_rec_lang(config.get("lang"))
@@ -263,7 +267,7 @@ class RapidOCRLabeler:
             }
         )
 
-    # --- SDK-контракт ---
+    # --- SDK contract ---
 
     def predict(self, image: bytes, config: dict) -> list[Annotation]:
         width, height = probe_image(image, max_pixels(config))

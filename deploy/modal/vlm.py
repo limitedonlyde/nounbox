@@ -1,25 +1,25 @@
-"""Modal-рецепт: Qwen2.5-VL как OpenAI-compatible endpoint через vLLM.
+"""Modal recipe: Qwen2.5-VL as an OpenAI-compatible endpoint via vLLM.
 
-Для стандартных моделей проще managed Modal Endpoints (OpenAI-compatible,
-без своего кода) — этот рецепт нужен для кастома: своя модель, свои
-параметры vLLM, свой прогрев.
+For stock models managed Modal Endpoints are simpler (OpenAI-compatible,
+no code of your own) — this recipe is for the custom case: your own model,
+your own vLLM parameters, your own warmup.
 
-Деплой:  modal deploy deploy/modal/vlm.py
-После деплоя endpoint вида https://<workspace>--nounbox-vlm-serve.modal.run
-подставляется в VLM-labeler как base_url (+ "/v1"), model = MODEL ниже.
+Deploy:  modal deploy deploy/modal/vlm.py
+Once deployed, an endpoint like https://<workspace>--nounbox-vlm-serve.modal.run
+goes into the VLM labeler as base_url (+ "/v1"), model = MODEL below.
 
-Деньги: gpu="L4", scale-to-zero (scaledown_window) — платим только за разметку.
-Первый запуск: сборка образа + скачивание модели (~15GB) — минуты; дальше
-модель кешируется в Volume. Остановить: modal app stop nounbox-vlm
+Money: gpu="L4", scale-to-zero (scaledown_window) — we pay only while labeling.
+First run: image build + model download (~15GB) takes minutes; after that the
+model is cached in the Volume. To stop: modal app stop nounbox-vlm
 
-Производственное замечание: endpoint публичный по неугадываемому URL.
-Для защиты добавьте проверку Authorization в обёртку или modal ProxyAuth.
+Production note: the endpoint is public, guarded only by an unguessable URL.
+To secure it, add an Authorization check in the wrapper, or use modal ProxyAuth.
 """
 
 import modal
 
 MODEL = "Qwen/Qwen2.5-VL-7B-Instruct"
-GPU = "L4"  # 24GB — достаточно для 7B bf16 + KV-cache
+GPU = "L4"  # 24GB — enough for 7B bf16 + KV cache
 
 app = modal.App("nounbox-vlm")
 
@@ -37,7 +37,7 @@ image = modal.Image.debian_slim(python_version="3.11").pip_install(
     gpu=GPU,
     volumes={"/root/.cache/huggingface": hf_cache},
     timeout=3600,
-    scaledown_window=300,  # 5 минут простоя -> scale to zero
+    scaledown_window=300,  # 5 minutes idle -> scale to zero
 )
 @modal.web_server(port=8000, startup_timeout=1500)
 def serve():

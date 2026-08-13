@@ -1,7 +1,7 @@
-"""Тестовое окружение: sqlite вместо postgres, локальный ключ шифрования, фейковый arq.
+"""Test environment: sqlite instead of postgres, a local encryption key, a fake arq.
 
-Окружение выставляется до импорта app.*, потому что app.config.settings
-читается на импорте.
+The environment is set up before app.* is imported, because app.config.settings
+is read at import time.
 """
 
 import os
@@ -30,8 +30,8 @@ from app.models import Base  # noqa: E402
 from app.workers import tasks as worker_tasks  # noqa: E402
 
 
-# postgres-специфичные типы схемы — в sqlite-эквиваленты (миграций в проекте нет,
-# схема создаётся через create_all, так что этого достаточно)
+# postgres-specific schema types map to their sqlite equivalents (the project has
+# no migrations, the schema is built by create_all, so this is enough)
 @compiles(JSONB, "sqlite")
 def _compile_jsonb_sqlite(type_, compiler, **kw):
     return compiler.visit_JSON(type_, **kw)
@@ -43,7 +43,7 @@ def _compile_uuid_sqlite(type_, compiler, **kw):
 
 
 class FakeArq:
-    """Подмена пула arq: помнит, что бы поставили в очередь."""
+    """Stand-in for the arq pool: remembers what would have been enqueued."""
 
     def __init__(self) -> None:
         self.enqueued: list[tuple[str, tuple]] = []
@@ -59,8 +59,8 @@ async def session_factory(tmp_path, monkeypatch):
         f"sqlite+aiosqlite:///{tmp_path / 'test.db'}", poolclass=NullPool
     )
 
-    # sqlite по умолчанию не проверяет внешние ключи, а postgres проверяет:
-    # без этого тесты не заметили бы ни осиротевших строк, ни IntegrityError
+    # sqlite does not enforce foreign keys by default while postgres does:
+    # without this the tests would miss both orphaned rows and IntegrityError
     @event.listens_for(engine.sync_engine, "connect")
     def _enforce_foreign_keys(dbapi_connection, _record):
         cursor = dbapi_connection.cursor()
@@ -80,7 +80,7 @@ async def session_factory(tmp_path, monkeypatch):
 
 @pytest.fixture
 def key_path(tmp_path, monkeypatch):
-    """Свежий ключ шифрования на каждый тест."""
+    """A fresh encryption key for every test."""
     path = tmp_path / "keys" / "settings.key"
     monkeypatch.setattr(crypto.settings, "settings_key_path", str(path))
     monkeypatch.setattr(crypto.settings, "settings_encryption_key", "")

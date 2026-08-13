@@ -25,5 +25,5 @@ include = ["nounbox_labeler_llmdet*"]
 testpaths = ["tests"]
 addopts = "-m 'not slow'"
 markers = [
-    "slow: прогон реальной модели (веса 0.7-1.6 ГБ, секунды на фото); запуск: pytest -m slow",
+    "slow: runs the real model (0.7-1.6 GB of weights, seconds per photo); run: pytest -m slow",
 ]

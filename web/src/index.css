@@ -1,16 +1,16 @@
 /* ============================================================================
-   Nounbox — оформление.
+   Nounbox — styling.
 
-   Правило, из которого следует всё остальное: содержимое здесь — фотографии
-   пользователя. Интерфейс не должен с ними соперничать, поэтому поверхности
-   нейтральные, цветом выделяется только то, что несёт смысл: класс объекта,
-   статус проверки, единственное главное действие на экране.
+   The rule everything else follows from: the content here is the user's own
+   photos. The interface must not compete with them, so surfaces stay neutral
+   and color is spent only on what carries meaning: the object class, the
+   review status, the single primary action on the screen.
    ============================================================================ */
 
 :root {
   color-scheme: light dark;
 
-  /* Поверхности: фон -> карточка -> вложенный блок */
+  /* Surfaces: background -> card -> nested block */
   --bg: #f7f8fa;
   --surface: #ffffff;
   --surface-2: #f2f4f7;
@@ -107,7 +107,7 @@ a {
   font-size: 0.875rem;
 }
 
-/* --- шапка --- */
+/* --- top bar --- */
 .topbar {
   display: flex;
   align-items: center;
@@ -144,7 +144,7 @@ a {
   background: var(--surface-2);
 }
 
-/* --- элементы форм --- */
+/* --- form elements --- */
 button {
   font: inherit;
   font-size: 0.875rem;
@@ -167,7 +167,7 @@ button:disabled {
   cursor: default;
 }
 
-/* Главное действие экрана — ровно одно, поэтому оно единственное залитое */
+/* A screen has exactly one primary action, so it is the only filled button */
 button.primary,
 button[type="submit"] {
   background: var(--accent);
@@ -227,8 +227,8 @@ kbd {
   color: var(--text-dim);
 }
 
-/* Экспорт — это ссылка (браузер должен скачать файл), но в ряду кнопок
-   она обязана выглядеть кнопкой, иначе читается как посторонний текст */
+/* Export is a link (the browser has to download the file), but in a row of
+   buttons it has to look like a button, otherwise it reads as stray text */
 .export-link {
   display: inline-flex;
   align-items: center;
@@ -263,7 +263,7 @@ kbd {
   text-decoration: underline;
 }
 
-/* --- панель инструментов --- */
+/* --- toolbar --- */
 .toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -277,8 +277,8 @@ kbd {
   margin-bottom: 1rem;
 }
 
-/* Группы отделяются линией, а не пустотой: иначе десяток контролов
-   читается как один длинный ряд без структуры */
+/* Groups are separated by a line, not by empty space: otherwise a dozen
+   controls read as one long row with no structure */
 .toolbar-group {
   display: flex;
   align-items: center;
@@ -308,7 +308,7 @@ kbd {
   color: var(--text-faint);
 }
 
-/* --- сообщения --- */
+/* --- messages --- */
 .error,
 .warning,
 .hint {
@@ -337,7 +337,7 @@ kbd {
   border: 1px solid var(--border);
 }
 
-/* --- список проектов --- */
+/* --- project list --- */
 .project-form {
   display: flex;
   gap: 0.5rem;
@@ -379,7 +379,7 @@ kbd {
   font-weight: 550;
 }
 
-/* --- классы проекта --- */
+/* --- project classes --- */
 .classes-panel {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -425,7 +425,7 @@ kbd {
   gap: 0.4rem;
 }
 
-/* Класс — «фишка»: цвет, имя, горячая клавиша, удаление */
+/* A class is a chip: color, name, hotkey, delete */
 .class-list li {
   display: inline-flex;
   align-items: center;
@@ -492,7 +492,7 @@ kbd {
   margin-top: 0.5rem;
 }
 
-/* --- сетка изображений --- */
+/* --- image grid --- */
 .image-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
@@ -561,7 +561,7 @@ kbd {
   }
 }
 
-/* --- ревью --- */
+/* --- review --- */
 .review-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 300px;
@@ -575,11 +575,11 @@ kbd {
   }
 }
 
-/* Холст — главный объект экрана.
-   КРИТИЧНО: холст обтягивает картинку по размеру. SVG с рамками лежит
-   inset:0 поверх холста, а пересчёт координат мыши линейный — если холст
-   окажется шире картинки (например при object-fit: contain), рамки при
-   перетаскивании поедут. Поэтому width: fit-content, а не 100%. */
+/* The canvas is the main object on the screen.
+   CRITICAL: the canvas hugs the image exactly. The SVG with the boxes sits at
+   inset:0 on top of the canvas, and the mouse-coordinate conversion is linear —
+   if the canvas ends up wider than the image (with object-fit: contain, say),
+   the boxes drift while you drag them. Hence width: fit-content, not 100%. */
 .review-canvas {
   position: relative;
   width: fit-content;
@@ -736,7 +736,7 @@ kbd {
   gap: 0.3rem;
 }
 
-/* Очередь: сначала самые неуверенные — там польза от человека наибольшая */
+/* Queue: least confident first — that is where a human helps the most */
 .ann-list {
   list-style: none;
   padding: 0;
@@ -779,7 +779,7 @@ kbd {
   white-space: nowrap;
 }
 
-/* --- настройки --- */
+/* --- settings --- */
 .settings-page {
   max-width: 44rem;
 }

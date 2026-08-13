@@ -1,12 +1,12 @@
-# Сборка и публикация образов в GitHub Container Registry.
+# Build and publish images to the GitHub Container Registry.
 #
-# Что публикуется:
-#   ghcr.io/<owner>/nounbox-server — api и worker (образ один, различаются
-#                                        только команды в compose)
-#   ghcr.io/<owner>/nounbox-web    — собранная статика за nginx (цель prod)
+# What is published:
+#   ghcr.io/<owner>/nounbox-server — api and worker (a single image, they
+#                                        differ only in the compose commands)
+#   ghcr.io/<owner>/nounbox-web    — static bundle behind nginx (prod target)
 #
-# Эти образы подключает docker-compose.ghcr.yml: пользователю не нужно ничего
-# собирать локально — только скачать compose-файл и поднять стек.
+# docker-compose.ghcr.yml wires these images in: the user does not have to build
+# anything locally — just download the compose file and bring the stack up.
 name: Publish images
 
 on:
@@ -25,35 +25,35 @@ on:
         default: false
         type: boolean
 
-# GITHUB_TOKEN: только пуш пакетов и чтение исходников
+# GITHUB_TOKEN: pushing packages and reading sources, nothing else
 permissions:
   contents: read
   packages: write
 
 concurrency:
-  # сборки одного ref'а не наслаиваются друг на друга; для тегов отмена
-  # запрещена — начатый релиз должен доехать до конца
+  # builds of one ref do not stack up on each other; for tags cancelling is
+  # forbidden — a release that has started must make it all the way through
   group: publish-${{ github.ref }}
   cancel-in-progress: ${{ github.ref_type != 'tag' }}
 
 jobs:
-  # без зелёных тестов образ в GHCR не уезжает
+  # no green tests, no image in GHCR
   test:
     uses: ./.github/workflows/test.yml
 
   build:
     needs: test
     runs-on: ubuntu-latest
-    # холодная сборка server под QEMU/arm64 — десятки минут, запас нужен
+    # a cold server build under QEMU/arm64 takes tens of minutes, so leave room
     timeout-minutes: 150
     strategy:
-      # web не должен оставаться неопубликованным из-за падения server
+      # web must not stay unpublished just because server failed
       fail-fast: false
       matrix:
         include:
-          # api и worker собираются из одного Dockerfile с одинаковыми
-          # аргументами, то есть побайтово совпадают. Публикуем один образ —
-          # так исключён рассинхрон версий api и worker'а на общей БД.
+          # api and worker are built from the same Dockerfile with the same
+          # arguments, i.e. they match byte for byte. Publishing one image
+          # rules out api and worker drifting apart in version on a shared DB.
           - image: server
             context: .
             dockerfile: server/Dockerfile
@@ -68,15 +68,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # GHCR не принимает заглавные буквы в имени образа, а владелец репозитория
-      # может быть записан как угодно (MyOrg) — приводим к нижнему регистру
+      # GHCR does not accept uppercase letters in an image name, and the repo
+      # owner may be spelled any way at all (MyOrg) — so lowercase it
       - name: Resolve image namespace
         id: ns
         run: echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
 
-      # эмуляция arm64 на amd64-раннере. Если репозиторий публичный, дешевле
-      # и быстрее собирать arm64 нативно: вынести матрицу по платформам на
-      # runs-on: ubuntu-24.04-arm и слить манифесты — тогда этот шаг не нужен.
+      # arm64 emulation on an amd64 runner. On a public repository it is cheaper
+      # and faster to build arm64 natively: split the matrix by platform onto
+      # runs-on: ubuntu-24.04-arm and merge the manifests — then drop this step.
       - uses: docker/setup-qemu-action@v3
         with:
           platforms: arm64
@@ -112,16 +112,16 @@ jobs:
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
-          # пусто для server: в его Dockerfile одна стадия
+          # empty for server: its Dockerfile has a single stage
           target: ${{ matrix.target }}
           platforms: ${{ inputs.platforms || 'linux/amd64,linux/arm64' }}
           push: ${{ github.event_name != 'workflow_dispatch' || inputs.push }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           annotations: ${{ steps.meta.outputs.annotations }}
-          # кеш слоёв между запусками. scope на образ обязателен: с общим
-          # server и web вытесняли бы кеш друг друга. Лимит GitHub — 10 ГБ на
-          # репозиторий, при вытеснении сборка просто идёт с нуля.
+          # layer cache across runs. A per-image scope is mandatory: with a
+          # shared one, server and web would evict each other's cache. GitHub's
+          # limit is 10 GB per repo; on eviction a build simply starts from scratch.
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
 

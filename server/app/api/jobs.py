@@ -50,11 +50,11 @@ async def get_job(job_id: uuid.UUID, session: AsyncSession = Depends(get_session
 async def get_active_job(
     project_id: uuid.UUID, session: AsyncSession = Depends(get_session)
 ):
-    """Незавершённая задача проекта, если она есть.
+    """The project's unfinished job, if there is one.
 
-    Нужна, чтобы страница подхватывала работу после перезагрузки вкладки,
-    обрыва сети или сна ноутбука: иначе опрос умирает вместе с вкладкой,
-    а пользователь навсегда видит «Autolabel запущен...».
+    Needed so the page can pick the work back up after a tab reload, a network
+    drop or the laptop going to sleep: otherwise polling dies together with the
+    tab and the user is stuck on "Autolabel started..." forever.
     """
     result = await session.execute(
         select(Job)

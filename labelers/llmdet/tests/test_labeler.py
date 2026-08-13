@@ -1,4 +1,4 @@
-"""Тесты чистых функций LLMDet-лейблера — без модели, без torch и без сети."""
+"""Pure-function tests for the LLMDet labeler — no model, no torch, no network."""
 
 import io
 
@@ -10,7 +10,7 @@ from nounbox_labeler_llmdet import labeler as mod
 from nounbox_labeler_llmdet.labeler import Detection
 from nounbox_sdk import BBox, Labeler
 
-# реальный выход BertTokenizerFast модели на промпт "carpet. sofa. chandelier."
+# the model's real BertTokenizerFast output for the prompt "carpet. sofa. chandelier."
 # ['[CLS]', 'carpet', '.', 'sofa', '.', 'chan', '##del', '##ier', '.', '[SEP]']
 IDS_THREE_CLASSES = [101, 10135, 1012, 10682, 1012, 9212, 9247, 3771, 1012, 102]
 CLS_ID, SEP_ID, DOT_ID = 101, 102, 1012
@@ -27,7 +27,7 @@ def detection(label, score, box):
 
 
 class FakeEngine:
-    """Движок-заглушка: помнит, с чем его позвали, и отдаёт готовые рамки."""
+    """Stub engine: remembers what it was called with and returns canned boxes."""
 
     def __init__(self, detections=(), model_id="fake"):
         self.detections = list(detections)
@@ -39,7 +39,7 @@ class FakeEngine:
         return self.detections
 
 
-# --- сборка промпта ---
+# --- building the prompt ---
 
 
 def test_build_prompt_joins_with_dots():
@@ -49,7 +49,7 @@ def test_build_prompt_joins_with_dots():
 
 
 def test_build_prompt_lowercases_and_squeezes_spaces():
-    """Регистр и лишние пробелы режет сам processor — делаем это сами и предсказуемо."""
+    """The processor strips case and extra spaces itself — we do it, predictably."""
     assert mod.build_prompt(["  Cutting   Board ", "SOFA"]) == "cutting board. sofa."
 
 
@@ -57,11 +57,11 @@ def test_build_prompt_single_class_still_ends_with_dot():
     assert mod.build_prompt(["carpet"]) == "carpet."
 
 
-# --- классы проекта из config ---
+# --- the project classes from config ---
 
 
 def test_resolve_classes_keeps_order_and_original_case():
-    """label в Annotation должен совпасть с project_classes.name — регистр не трогаем."""
+    """Annotation.label has to match project_classes.name — we don't touch the case."""
     assert mod.resolve_classes({"classes": ["Carpet", "sofa", "Chandelier"]}) == [
         "Carpet",
         "sofa",
@@ -77,7 +77,7 @@ def test_resolve_classes_strips_and_drops_empty():
 
 
 def test_resolve_classes_dedupes_case_insensitively():
-    """«Sofa» и «sofa» дали бы два одинаковых диапазона токенов в промпте."""
+    """A "Sofa" and a "sofa" would give two identical token spans in the prompt."""
     assert mod.resolve_classes({"classes": ["sofa", "Sofa", "SOFA"]}) == ["sofa"]
 
 
@@ -92,18 +92,18 @@ def test_resolve_classes_rejects_empty_list():
 
 
 def test_resolve_classes_rejects_string():
-    """Строка «carpet» проитерировалась бы по буквам — это молчаливый мусор."""
+    """The string "carpet" would iterate letter by letter — silent garbage."""
     with pytest.raises(ValueError, match="must be a list"):
         mod.resolve_classes({"classes": "carpet"})
 
 
 def test_resolve_classes_rejects_dot_in_name():
-    """Точка — разделитель классов в промпте: класс с точкой разъехался бы на два."""
+    """A dot separates classes in the prompt: a class with a dot would split in two."""
     with pytest.raises(ValueError, match=r"contains '\.'"):
         mod.resolve_classes({"classes": ["u.s. flag"]})
 
 
-# --- лимит 91 класса ---
+# --- the 91-class limit ---
 
 
 def test_class_limit_allows_exactly_max():
@@ -116,25 +116,27 @@ def test_class_limit_rejects_one_over_with_both_numbers():
     with pytest.raises(ValueError) as excinfo:
         mod.resolve_classes({"classes": classes})
     message = str(excinfo.value)
-    assert str(mod.MAX_CLASSES) in message  # сколько можно
-    assert str(len(classes)) in message  # сколько у проекта
-    assert "owlv2" in message  # куда идти
+    assert str(mod.MAX_CLASSES) in message  # how many are allowed
+    assert str(len(classes)) in message  # how many the project has
+    assert "owlv2" in message  # where to go instead
 
 
 def test_class_limit_counts_after_dedupe():
-    """Дубли не должны выталкивать проект за лимит."""
+    """Duplicates must not push the project over the limit."""
     classes = [f"class {i}" for i in range(mod.MAX_CLASSES)] + ["CLASS 0", "class 1"]
     assert len(mod.resolve_classes({"classes": classes})) == mod.MAX_CLASSES
 
 
 def test_prompt_token_limit_is_the_second_gate():
-    """91 класса мало, если имена длинные: лимит модели — в токенах, не в классах."""
+    """Checking for 91 classes is not enough when the names are long: the
+    model's limit is in tokens, not in classes.
+    """
     with pytest.raises(ValueError, match="tokens"):
         mod.check_prompt_tokens(319, 256, 91)
     assert mod.check_prompt_tokens(256, 256, 91) is None
 
 
-# --- выбор модели ---
+# --- model selection ---
 
 
 @pytest.mark.parametrize(
@@ -156,12 +158,12 @@ def test_resolve_model_rejects_unknown_alias():
         mod.resolve_model({"model": "huge"})
 
 
-# --- диапазоны токенов по классам ---
+# --- per-class token spans ---
 
 
 def test_class_spans_splits_on_dots():
     spans = mod.class_spans(IDS_THREE_CLASSES, DOT_ID, {CLS_ID, SEP_ID}, 3)
-    # 'chandelier' разбит на три wordpiece'а — скор класса усредняется по ним
+    # 'chandelier' is split into three wordpieces — the class score averages them
     assert spans == [[1], [3], [5, 6, 7]]
 
 
@@ -171,7 +173,7 @@ def test_class_spans_without_trailing_dot():
 
 
 def test_class_spans_truncated_prompt_yields_fewer_spans():
-    """Если промпт обрезан, классов-диапазонов меньше — вызывающий это ловит."""
+    """A truncated prompt yields fewer class spans — the caller catches that."""
     ids = [CLS_ID, 10135, DOT_ID, SEP_ID]
     assert mod.class_spans(ids, DOT_ID, {CLS_ID, SEP_ID}, 3) == [[1]]
 
@@ -180,7 +182,7 @@ def test_class_spans_never_returns_more_than_requested():
     assert len(mod.class_spans(IDS_THREE_CLASSES, DOT_ID, {CLS_ID, SEP_ID}, 2)) == 2
 
 
-# --- координаты ---
+# --- coordinates ---
 
 
 def test_scale_box_converts_cxcywh_to_pixels():
@@ -188,11 +190,11 @@ def test_scale_box_converts_cxcywh_to_pixels():
 
 
 def test_scale_box_clips_to_frame():
-    """Модель уверенно вылезает за кадр на срезанных объектах — обрезаем."""
+    """The model happily runs off-frame on cropped objects — so we clip."""
     assert mod.scale_box(0.5, 0.5, 2.0, 2.0, 100, 50) == (0.0, 0.0, 100.0, 50.0)
 
 
-# --- NMS внутри класса ---
+# --- NMS within a class ---
 
 
 def test_nms_keeps_best_of_duplicates():
@@ -202,7 +204,7 @@ def test_nms_keeps_best_of_duplicates():
 
 
 def test_nms_keeps_overlapping_boxes_of_different_classes():
-    """«wine bottle» поверх «bottle» — это разметка, а не дубль."""
+    """A "wine bottle" over a "bottle" is labeling, not a duplicate."""
     bottle = detection("bottle", 0.9, (0, 0, 100, 100))
     wine = detection("wine bottle", 0.8, (0, 0, 100, 100))
     assert set(mod.nms_per_class([bottle, wine], 0.4)) == {bottle, wine}
@@ -215,14 +217,14 @@ def test_nms_keeps_distinct_instances_of_same_class():
 
 
 def test_nms_threshold_is_exclusive_on_equality():
-    """IoU ровно на пороге — не подавляем."""
+    """IoU exactly at the threshold — no suppression."""
     a = detection("chair", 0.9, (0, 0, 100, 100))
     b = detection("chair", 0.8, (50, 0, 150, 100))  # IoU = 1/3
     assert len(mod.nms_per_class([a, b], 1 / 3)) == 2
     assert len(mod.nms_per_class([a, b], 0.3)) == 1
 
 
-# --- разбор в Annotation ---
+# --- conversion into Annotation ---
 
 
 def test_to_annotations_builds_bbox_with_real_confidence():
@@ -230,9 +232,9 @@ def test_to_annotations_builds_bbox_with_real_confidence():
     assert isinstance(ann.geometry, BBox)
     assert (ann.geometry.x, ann.geometry.y) == (10, 20)
     assert (ann.geometry.width, ann.geometry.height) == (100, 200)
-    assert ann.label == "carpet"  # имя класса проекта, а не "text_line"
-    assert ann.text is None  # detection, не OCR
-    assert ann.confidence == 0.87  # скор модели, не константа
+    assert ann.label == "carpet"  # the project class name, not "text_line"
+    assert ann.text is None  # detection, not OCR
+    assert ann.confidence == 0.87  # the model's score, not a constant
 
 
 def test_to_annotations_sorted_by_confidence():
@@ -267,7 +269,7 @@ def test_score_threshold_zero_keeps_everything():
 
 def test_to_annotations_drops_degenerate_boxes():
     detections = [
-        detection("a", 0.9, (10.0, 10.0, 10.2, 200.0)),  # полоска шириной 0.2 px
+        detection("a", 0.9, (10.0, 10.0, 10.2, 200.0)),  # a sliver 0.2 px wide
         detection("b", 0.9, (10.0, 10.0, 110.0, 210.0)),
     ]
     assert [a.label for a in mod.to_annotations(detections)] == ["b"]
@@ -286,7 +288,7 @@ def test_empty_detections_return_empty_list():
     assert mod.to_annotations([]) == []
 
 
-# --- картинка ---
+# --- the image ---
 
 
 def test_load_image_returns_rgb():
@@ -311,7 +313,7 @@ def test_load_image_rejects_oversized():
 
 
 def test_option_treats_null_as_default():
-    """config приезжает из JSON-payload задачи: null там встречается чаще, чем нужно."""
+    """config comes from the job's JSON payload, where null turns up all too often."""
     assert mod.option({}, "score_threshold", 0.35) == 0.35
     assert mod.option({"score_threshold": None}, "score_threshold", 0.35) == 0.35
     assert mod.option({"score_threshold": 0}, "score_threshold", 0.35) == 0.0
@@ -344,7 +346,7 @@ def test_max_pixels_rejects_nonpositive():
         mod.max_pixels({"max_pixels": -1})
 
 
-# --- кеш весов ---
+# --- the weight cache ---
 
 
 def test_model_dir_from_env(monkeypatch, tmp_path):
@@ -357,10 +359,10 @@ def test_model_dir_from_env(monkeypatch, tmp_path):
 def test_model_dir_falls_back_to_hf_cache_when_unwritable(monkeypatch, tmp_path):
     (tmp_path / "file.txt").write_text("not a directory")
     monkeypatch.setenv(mod.ENV_MODEL_DIR, str(tmp_path / "file.txt" / "weights"))
-    assert mod.model_dir() is None  # None = штатный кеш huggingface
+    assert mod.model_dir() is None  # None = the stock huggingface cache
 
 
-# --- ленивая загрузка модели ---
+# --- lazy model loading ---
 
 
 def test_engine_created_once_per_model(monkeypatch):
@@ -373,7 +375,7 @@ def test_engine_created_once_per_model(monkeypatch):
     monkeypatch.setattr(LLMDetLabeler, "_create_engine", staticmethod(fake_create))
     instance = LLMDetLabeler()
 
-    assert instance._engines == {}  # ничего не грузится до первого predict
+    assert instance._engines == {}  # nothing is loaded before the first predict
     first = instance._engine("iSEE-Laboratory/llmdet_base")
     assert instance._engine("iSEE-Laboratory/llmdet_base") is first
     instance._engine("iSEE-Laboratory/llmdet_tiny")
@@ -404,8 +406,8 @@ def test_predict_wires_config_into_engine_and_postprocessing(monkeypatch):
     engine = FakeEngine(
         [
             detection("sofa", 0.90, (0, 0, 100, 100)),
-            detection("sofa", 0.80, (4, 4, 104, 104)),  # дубль -> NMS
-            detection("carpet", 0.30, (0, 0, 50, 50)),  # ниже порога
+            detection("sofa", 0.80, (4, 4, 104, 104)),  # duplicate -> NMS
+            detection("carpet", 0.30, (0, 0, 50, 50)),  # below the threshold
         ]
     )
     monkeypatch.setattr(
@@ -445,10 +447,10 @@ def test_predict_honours_explicit_thresholds(monkeypatch):
         ("sofa", 0.80),
         ("carpet", 0.30),
     ]
-    assert engine.calls[0][2] == 0.25  # порог уходит и в движок — лишнего не считаем
+    assert engine.calls[0][2] == 0.25  # threshold goes to the engine too — no waste
 
 
-# --- контракт платформы ---
+# --- the platform contract ---
 
 
 def test_satisfies_sdk_protocol():

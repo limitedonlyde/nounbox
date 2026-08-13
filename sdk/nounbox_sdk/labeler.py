@@ -1,4 +1,4 @@
-"""Протокол labeler-плагина и загрузчик."""
+"""The labeler plugin protocol and its loader."""
 
 from __future__ import annotations
 
@@ -11,9 +11,9 @@ ENTRYPOINT_GROUP = "nounbox.labelers"
 
 @runtime_checkable
 class Labeler(Protocol):
-    """Контракт движка авторазметки.
+    """The auto-labeling engine contract.
 
-    Реализация — обычный класс без обязательного наследования:
+    An implementation is an ordinary class, no base class required:
 
         class MyLabeler:
             name = "my-ocr"
@@ -29,17 +29,17 @@ class Labeler(Protocol):
     capabilities: set[Capability]
 
     def predict(self, image: bytes, config: dict) -> list[Annotation]:
-        """Разметить одно изображение.
+        """Label a single image.
 
-        :param image: байты изображения (JPEG/PNG — как загружено после нормализации)
-        :param config: пользовательские настройки запуска (язык, пороги и т.п.)
-        :return: список аннотаций с confidence; source проставит платформа
+        :param image: image bytes (PNG/JPEG — normalized at ingest, not the raw upload)
+        :param config: user settings for the run (language, thresholds, etc.)
+        :return: annotations with confidence; source is filled in by the platform
         """
         ...
 
 
 def load_labelers() -> dict[str, Labeler]:
-    """Найти все установленные labeler'ы через entry points."""
+    """Find every installed labeler through entry points."""
     from importlib.metadata import entry_points
 
     found: dict[str, Labeler] = {}
@@ -47,7 +47,7 @@ def load_labelers() -> dict[str, Labeler]:
         try:
             instance = ep.load()()
             found[instance.name] = instance
-        except Exception as exc:  # плагин не должен ронять платформу
+        except Exception as exc:  # a plugin must not bring the platform down
             import logging
 
             logging.getLogger(__name__).warning(

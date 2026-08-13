@@ -1,4 +1,4 @@
-"""Проекты: удаление непустого проекта уносит всё содержимое и файлы в S3."""
+"""Projects: deleting a non-empty project takes its content and S3 files with it."""
 
 import uuid
 
@@ -22,7 +22,7 @@ BASE = "/api/v1"
 
 @pytest.fixture
 def deleted_keys(monkeypatch) -> list[str]:
-    """Ключи, которые ручка попросила удалить из S3."""
+    """The keys the endpoint asked to delete from S3."""
     recorded: list[str] = []
     monkeypatch.setattr(storage, "delete_objects", lambda keys: recorded.extend(keys))
     return recorded
@@ -35,7 +35,7 @@ async def make_project(client) -> str:
 
 
 async def fill_project(session_factory, project_id: str) -> dict:
-    """Документ + кадр + аннотация + класс + задача. Возвращает s3-ключи."""
+    """Document + frame + annotation + class + job. Returns the s3 keys."""
     async with session_factory() as session:
         document = Document(
             project_id=uuid.UUID(project_id),
@@ -106,7 +106,7 @@ async def test_delete_project_cleans_up_s3_objects(
 async def test_storage_failure_does_not_break_deletion(
     client, session_factory, monkeypatch
 ):
-    """S3 — не транзакция: недоступное хранилище не должно ронять удаление."""
+    """S3 is not transactional: unreachable storage must not break the deletion."""
 
     def boom(keys):
         raise RuntimeError("minio is down")

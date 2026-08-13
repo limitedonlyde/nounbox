@@ -1,7 +1,8 @@
-"""Схема БД. user_id и provenance аннотаций заложены с первого дня.
+"""Database schema. Annotation user_id and provenance are baked in from day one.
 
-provenance (source / confidence / status) — не служебное поле, а то, из чего
-считается качество движка на данных пользователя и подбирается порог.
+provenance (source / confidence / status) is not bookkeeping: it is what we
+measure engine quality on the user's own photos from, and what the accept
+threshold is picked from.
 """
 
 import uuid
@@ -27,8 +28,8 @@ class Base(DeclarativeBase):
 
 
 class TaskType(StrEnum):
-    """Тип задачи проекта. Детекция объектов по своим классам — основной сценарий,
-    OCR остаётся вторым типом (движки OCR — те же плагины)."""
+    """Project task type. Detecting objects by your own classes is the main
+    scenario; OCR stays the second type (OCR engines are the same plugins)."""
 
     DETECTION = "detection"
     OCR = "ocr"
@@ -98,10 +99,11 @@ class Project(Base):
 
 
 class ProjectClass(Base):
-    """Класс объектов проекта: английское имя-запрос для движка + цвет для UI.
+    """A project object class: an English query name for the engine + a UI color.
 
-    Annotation.label хранит именно name — связи по id нет намеренно: аннотация
-    остаётся читаемой после удаления класса, а экспорт не зависит от таблицы.
+    Annotation.label stores the name, not an id — deliberately: an annotation
+    stays readable after its class is deleted, and export does not depend on
+    the classes table at all.
     """
 
     __tablename__ = "project_classes"
@@ -115,7 +117,7 @@ class ProjectClass(Base):
     project_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("projects.id", ondelete="CASCADE")
     )
-    # длина совпадает с Annotation.label — имя класса уезжает туда как есть
+    # length matches Annotation.label — the class name travels there as is
     name: Mapped[str] = mapped_column(String(100))
     color: Mapped[str] = mapped_column(String(20), default="#3b82f6")
     sort_order: Mapped[int] = mapped_column(default=0)
@@ -123,7 +125,7 @@ class ProjectClass(Base):
 
 
 class Document(Base):
-    """Исходный загруженный файл (фото, PDF, архив...)."""
+    """A source file as uploaded (photo, PDF, archive...)."""
 
     __tablename__ = "documents"
 
@@ -143,7 +145,7 @@ class Document(Base):
 
 
 class Image(Base):
-    """Нормализованная страница/кадр, полученная из Document при ingest."""
+    """A normalized page/frame produced from a Document during ingest."""
 
     __tablename__ = "images"
 
@@ -155,20 +157,20 @@ class Image(Base):
     s3_key: Mapped[str] = mapped_column(String(1000))
     width: Mapped[int] = mapped_column(default=0)
     height: Mapped[int] = mapped_column(default=0)
-    # SHA-256 нормализованных байтов (точный дедуп); perceptual hash — позже отдельной колонкой
+    # SHA-256 of the normalized bytes (exact dedup); perceptual hash later, in its own column
     content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     blur_score: Mapped[float | None] = mapped_column(nullable=True)
-    # Кадр просмотрен человеком. Нужен ровно для одного различия: «проверил,
-    # объектов нет» против «ещё не смотрели». Первое — валидный фоновый пример
-    # для детектора, второе в датасет пускать нельзя. Само по себе наличие
-    # проверенных аннотаций (accepted/edited/rejected) тоже считается проверкой,
-    # флаг ставится явно для кадров, где рамок не было вовсе.
+    # Frame looked at by a human. Needed for exactly one distinction: "checked,
+    # there are no objects" versus "not looked at yet". The first is a valid
+    # background example for the detector, the second must never reach the
+    # dataset. Reviewed annotations (accepted/edited/rejected) already count as
+    # a review; the flag is set explicitly for frames that had no boxes at all.
     reviewed: Mapped[bool] = mapped_column(default=False, server_default=false())
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
 class Annotation(Base):
-    """Универсальная аннотация: detection / recognition / layout / KIE."""
+    """A universal annotation: detection / recognition / layout / KIE."""
 
     __tablename__ = "annotations"
 
@@ -202,14 +204,14 @@ class Annotation(Base):
 
 
 class Job(Base):
-    """Фоновая задача (ingest / autolabel / deploy_gpu)."""
+    """A background job (ingest / autolabel / deploy_gpu)."""
 
     __tablename__ = "jobs"
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    # deploy_gpu — задача уровня инсталляции, без проекта
+    # deploy_gpu is an installation-level job, with no project
     project_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("projects.id"), nullable=True
     )
@@ -226,9 +228,9 @@ class Job(Base):
 
 
 class InstanceSettings(Base):
-    """Настройки инсталляции: одна строка (user_id зарезервирован на мультиаренду).
+    """Installation settings: a single row (user_id is reserved for multi-tenancy).
 
-    Секрет токена Modal хранится только в зашифрованном виде (app.crypto).
+    The Modal token secret is stored encrypted only (app.crypto).
     """
 
     __tablename__ = "settings"
@@ -249,8 +251,8 @@ class InstanceSettings(Base):
     )
     gpu_endpoint_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     gpu_error: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # Bearer-токен развёрнутого GPU-эндпоинта: генерируется при деплое, иначе
-    # эндпоинт открыт любому, кто узнал URL, и тратит деньги владельца аккаунта
+    # Bearer token of the deployed GPU endpoint: generated at deploy time,
+    # otherwise anyone who learns the URL can use it on the account owner's bill
     gpu_access_token_encrypted: Mapped[str | None] = mapped_column(
         Text, nullable=True
     )

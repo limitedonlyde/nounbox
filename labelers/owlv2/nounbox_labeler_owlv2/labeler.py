@@ -1,23 +1,23 @@
-"""OWLv2: открытословарная детекция боксов по названиям классов.
+"""OWLv2: open-vocabulary box detection driven by class names.
 
-Дефолтный движок режима «просто»: работает на CPU без ключей и аккаунтов,
-классы задаёт пользователь произвольным английским текстом.
+The default engine of the "easy" mode: runs on CPU with no keys and no
+accounts, and the user gives the classes as free-form English text.
 
-Замер на 79 фото / 323 объектах (LVIS val): F1 0.823, точность 0.83,
-полнота 0.82, ~2 с на фото на CPU M2. Пороги оттуда же: 0.25 показывать
-человеку, 0.40 принимать пачкой (точность 0.94).
+Measured on 79 photos / 323 objects (LVIS val): F1 0.823, precision 0.83,
+recall 0.82, ~2 s per photo on an M2 CPU. The thresholds come from the same
+run: 0.25 to show to a human, 0.40 to accept in bulk (precision 0.94).
 
-ПОЧЕМУ СВОЯ ПОСТОБРАБОТКА, а не post_process_grounded_object_detection:
-штатная функция отдаёт на каждую рамку только argmax по запросам, из-за чего
-на длинном списке классов теряется часть находок — они переподписываются
-соседним классом (kitchen sink -> sink, table lamp -> lamp). Замер: 37 рамок
-из 301. Эмиссия по каждому классу-запросу отдельно эту потерю снимает
-полностью и делает результат инвариантным к длине списка классов: добавление
-класса в проект не сдвигает уже принятые человеком рамки.
+WHY OUR OWN POST-PROCESSING rather than post_process_grounded_object_detection:
+the stock function hands back only the argmax over the queries for each box, so
+on a long class list part of the findings is lost — they get relabeled with a
+neighboring class (kitchen sink -> sink, table lamp -> lamp). Measured: 37 of
+301 boxes. Emitting each query class separately removes that loss entirely and
+makes the result invariant to the length of the class list: adding a class to
+the project does not shift boxes a human has already accepted.
 
-Координаты: OWLv2 дополняет изображение до КВАДРАТА и масштабирует в 960x960,
-поэтому pred_boxes нормированы относительно стороны квадрата, а не кадра.
-Пересчёт идёт через side = max(width, height) с последующим клипом по границам.
+Coordinates: OWLv2 pads the image to a SQUARE and rescales it to 960x960, so
+pred_boxes are normalized against the square's side, not against the frame.
+Converting back goes via side = max(width, height), then clipping to the edges.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ from nounbox_sdk import Annotation, BBox, Capability
 DEFAULT_MODEL = "google/owlv2-base-patch16-ensemble"
 DEFAULT_SCORE_THRESHOLD = 0.25
 DEFAULT_NMS_IOU = 0.4
-# рамки тоньше этого после клипа по кадру — мусор от краевых патчей
+# boxes thinner than this after clipping to the frame are junk from edge patches
 MIN_SIDE_PX = 2.0
 
 
@@ -48,10 +48,10 @@ def iou(a: tuple[float, float, float, float], b: tuple[float, float, float, floa
 
 
 def nms_per_class(detections: list[dict], threshold: float) -> list[dict]:
-    """Жадное подавление дублей ОТДЕЛЬНО по каждому классу.
+    """Greedy duplicate suppression, SEPARATELY for each class.
 
-    Разные классы не подавляют друг друга намеренно: ковёр под столом —
-    это два объекта в одном месте, и человек должен увидеть оба.
+    Different classes deliberately do not suppress each other: a carpet under
+    a table is two objects in one place, and the human must see both.
     """
     by_class: dict[str, list[dict]] = {}
     for det in detections:
@@ -70,7 +70,7 @@ def nms_per_class(detections: list[dict], threshold: float) -> list[dict]:
 def square_box_to_image(
     box: tuple[float, float, float, float], width: int, height: int
 ) -> tuple[float, float, float, float] | None:
-    """cxcywh, нормированные к дополненному квадрату -> xyxy в пикселях кадра."""
+    """cxcywh normalized to the padded square -> xyxy in frame pixels."""
     side = max(width, height)
     cx, cy, bw, bh = box
     x1 = max(0.0, min((cx - bw / 2) * side, float(width)))
@@ -146,8 +146,8 @@ class Owlv2Labeler:
             inputs = processor(text=[classes], images=pil, return_tensors="pt")
             outputs = model(**inputs)
 
-        # logits: [патчи, запросы] — вероятность КАЖДОГО класса в КАЖДОЙ рамке,
-        # берём все пары выше порога, а не argmax по запросам
+        # logits: [patches, queries] — probability of EVERY class in EVERY box;
+        # take every pair above the threshold, not the argmax over the queries
         probs = torch.sigmoid(outputs.logits[0])
         boxes = outputs.pred_boxes[0]
 

@@ -14,8 +14,8 @@ dependencies = [
     "torch>=2.2",
     "Pillow>=10.0",
     "numpy>=1.26",
-    # обработчик изображений OWLv2 требует scipy для сглаженного ресайза
-    # (requires_backends(self, "scipy") в transformers) — без него predict падает
+    # the OWLv2 image processor needs scipy for antialiased resizing
+    # (requires_backends(self, "scipy") in transformers) — without it predict fails
     "scipy>=1.11",
 ]
 
@@ -29,5 +29,5 @@ include = ["nounbox_labeler_owlv2*"]
 testpaths = ["tests"]
 addopts = "-m 'not slow'"
 markers = [
-    "slow: прогон реальной модели (веса ~620 МБ, ~2 с на фото); запуск: pytest -m slow",
+    "slow: runs the real model (weights ~620 MB, ~2 s per photo); run: pytest -m slow",
 ]

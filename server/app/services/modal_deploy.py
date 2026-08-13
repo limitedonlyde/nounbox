@@ -1,9 +1,9 @@
-"""Развёртывание GPU-рецепта в аккаунт Modal пользователя.
+"""Deploying the GPU recipe into the user's own Modal account.
 
-Креды передаются явно (modal.Client.from_credentials — официальный путь для
-«managing Modal on behalf of third-party users»): ни ~/.modal.toml, ни
-MODAL_TOKEN_*, ни интерактива. URL web-эндпоинта deploy_app не возвращает —
-его берём отдельно через Function.from_name + hydrate(client=...).
+Credentials are passed explicitly (modal.Client.from_credentials — the official
+path for "managing Modal on behalf of third-party users"): no ~/.modal.toml, no
+MODAL_TOKEN_*, no interactive prompt. deploy_app does not return the web
+endpoint URL — we take it separately via Function.from_name + hydrate(client=...).
 """
 
 from __future__ import annotations
@@ -21,12 +21,12 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-# случайно примонтированный ~/.modal.toml (два активных профиля) сломал бы деплой
+# a stray mounted ~/.modal.toml (two active profiles) would break the deploy
 os.environ.setdefault("MODAL_CONFIG_PATH", "/nonexistent/modal.toml")
 
 RECIPE_MODULE_NAME = "nounbox_gpu_recipe"
 APP_NAME_RE = re.compile(r"^[a-zA-Z0-9._-]{1,64}$")
-# имя переменной, из которой рецепт забирает Bearer-токен эндпоинта
+# name of the variable the recipe takes the endpoint's Bearer token from
 GPU_TOKEN_ENV = "NOUNBOX_GPU_TOKEN"
 
 TOKEN_ID_PREFIX = "ak-"
@@ -41,7 +41,7 @@ PROXY_TOKEN_HINT = (
 
 
 class ModalDeployError(RuntimeError):
-    """Развернуть GPU не удалось; текст пригоден для показа пользователю."""
+    """The GPU deploy failed; the message is safe to show to the user."""
 
 
 @dataclass(slots=True)
@@ -53,7 +53,7 @@ class DeployedApp:
 
 
 def validate_token_pair(token_id: str, token_secret: str) -> str | None:
-    """Локальная проверка формата пары токенов; None — формат в порядке."""
+    """Local format check of the token pair; None — the format is fine."""
     if not token_id or not token_secret:
         return "Provide both token_id and token_secret"
     if token_id.startswith(PROXY_PREFIXES) or token_secret.startswith(PROXY_PREFIXES):
@@ -65,8 +65,8 @@ def validate_token_pair(token_id: str, token_secret: str) -> str | None:
     return None
 
 
-# Рецепт один — тот, что в монорепо (в образе лежит в /deploy/modal).
-# Дубликат внутри пакета не держим: две копии разъезжаются молча.
+# There is one recipe only — the one in the monorepo (in the image it sits at
+# /deploy/modal). No copy inside the package: two copies drift apart silently.
 MONOREPO_RECIPES = (
     Path("/deploy/modal/paddleocr_modal.py"),
     Path(__file__).resolve().parents[3] / "deploy" / "modal" / "paddleocr_modal.py",
@@ -102,7 +102,7 @@ def _friendly(exc: Exception, *secrets: str) -> str:
 
 
 async def _call(func, *args, **kwargs):
-    """Асинхронный вызов синхронной обёртки modal (в FastAPI нужен .aio)."""
+    """Call modal's sync wrapper asynchronously (under FastAPI we need .aio)."""
     aio = getattr(func, "aio", None)
     if aio is not None:
         return await aio(*args, **kwargs)
@@ -114,7 +114,7 @@ def load_recipe_app(path: Path):
     if spec is None or spec.loader is None:
         raise ModalDeployError(f"GPU recipe not found: {path}")
     module = importlib.util.module_from_spec(spec)
-    # функции рецепта сериализуются по имени модуля — регистрируем его заранее
+    # recipe functions are serialized by module name — register it up front
     sys.modules[RECIPE_MODULE_NAME] = module
     try:
         spec.loader.exec_module(module)
@@ -141,8 +141,8 @@ async def deploy_gpu_app(
         raise ModalDeployError(problem)
 
     resolved_path = Path(path) if path else recipe_path()
-    # рецепт запекает Bearer-токен в Secret на уровне модуля, читая эту
-    # переменную, — выставляем её ДО импорта рецепта
+    # the recipe bakes the Bearer token into a Secret at module level, reading
+    # this variable — so set it BEFORE importing the recipe
     if gpu_token:
         os.environ[GPU_TOKEN_ENV] = gpu_token
     app = load_recipe_app(resolved_path)
@@ -150,7 +150,7 @@ async def deploy_gpu_app(
     if not endpoints:
         raise ModalDeployError("The GPU recipe has no web endpoint (@modal.asgi_app)")
 
-    # пустой modal_gpu_app_name — деплой под именем из самого рецепта
+    # empty modal_gpu_app_name — deploy under the name from the recipe itself
     app_name = app_name or settings.modal_gpu_app_name or app.name
     if not APP_NAME_RE.match(app_name):
         raise ModalDeployError(
@@ -163,7 +163,7 @@ async def deploy_gpu_app(
         client = await _call(modal.Client.from_credentials, token_id, token_secret)
         result = await _call(modal.runner.deploy_app, app, name=app_name, client=client)
         function = modal.Function.from_name(app_name, endpoints[0], client=client)
-        # без явной гидрации ленивый get_web_url уйдёт в Client.from_env()
+        # without explicit hydration, the lazy get_web_url goes to Client.from_env()
         await _call(function.hydrate, client=client)
         endpoint_url = function.get_web_url()
     except ModalDeployError:

@@ -1,4 +1,4 @@
-"""Тесты чистой merge-логики консенсуса — без реальных движков."""
+"""Tests for the pure consensus merge logic — with no real engines."""
 
 import difflib
 
@@ -123,7 +123,7 @@ def test_three_engines():
     assert len(merged) == 3
 
     confirmed_by_all = merged[0]
-    assert confirmed_by_all.confidence == pytest.approx(0.95)  # лучший sim = 1.0 (vlm)
+    assert confirmed_by_all.confidence == pytest.approx(0.95)  # best sim = 1.0 (vlm)
     consensus = confirmed_by_all.attrs["consensus"]
     assert consensus["engines"] == ["paddleocr", "vlm", "http"]
     assert consensus["alt_text"] == {"http": "Total 42"}
@@ -159,26 +159,26 @@ def test_inputs_not_mutated():
 
 def test_text_similarity_normalization():
     assert text_similarity("Hello  World", "hello world") == pytest.approx(1.0)
-    # текста нет ни у одной стороны — сравнивать нечего, а не «идеально совпало»
+    # neither side has text — nothing to compare, not "a perfect match"
     assert text_similarity(None, None) is None
     assert text_similarity("", "  ") is None
-    # у одной стороны текста нет: движок его и не обещал (детектор без OCR)
+    # one side has no text: that engine never promised any (detector without OCR)
     assert text_similarity("abc", None) is None
 
 
-# --- сопоставление учитывает класс (detection) ---
+# --- matching takes the class into account (detection) ---
 def det(x, y, w, h, label):
-    """Аннотация детекции: класс есть, текста нет."""
+    """A detection annotation: it has a class and no text."""
     return Annotation(geometry=BBox(x=x, y=y, width=w, height=h), label=label)
 
 
 def test_boxes_of_different_labels_never_merge():
-    # диван и собака перекрываются почти полностью — но это разные объекты
+    # the sofa and the dog overlap almost entirely — but they are two objects
     merged = merge({"owlv2": [det(0, 0, 100, 100, "dog")], "dino": [det(2, 2, 98, 98, "sofa")]})
     by_label = {m.label: m for m in merged}
     assert set(by_label) == {"dog", "sofa"}
-    assert by_label["dog"].confidence == pytest.approx(0.45)  # primary без пары
-    assert by_label["sofa"].confidence == pytest.approx(0.35)  # secondary без пары
+    assert by_label["dog"].confidence == pytest.approx(0.45)  # primary, no partner
+    assert by_label["sofa"].confidence == pytest.approx(0.35)  # secondary, no partner
     assert by_label["dog"].attrs["consensus"]["engines"] == ["owlv2"]
     assert by_label["sofa"].attrs["consensus"]["engines"] == ["dino"]
 
@@ -194,11 +194,11 @@ def test_label_match_ignores_case_and_extra_spaces():
         {"a": [det(0, 0, 100, 100, "coffee table")], "b": [det(0, 0, 100, 100, "Coffee  Table")]}
     )
     assert len(merged) == 1
-    assert merged[0].label == "coffee table"  # label primary остаётся как есть
+    assert merged[0].label == "coffee table"  # primary's label survives as-is
 
 
 def test_match_prefers_same_label_over_better_iou():
-    # у чужого класса IoU выше, но пару должен получить бокс своего класса
+    # the wrong-class box has the higher IoU, but the partner must be same-class
     merged = merge(
         {
             "owlv2": [det(0, 0, 100, 100, "dog")],
@@ -211,15 +211,15 @@ def test_match_prefers_same_label_over_better_iou():
     assert by_label["sofa"][0].confidence == pytest.approx(0.35)
 
 
-# --- confidence детекции: текста нет, шкала геометрическая ---
+# --- detection confidence: no text, so the geometry scale applies ---
 def test_detection_agreement_is_not_scored_as_perfect_text_match():
     merged = merge({"owlv2": [det(0, 0, 100, 100, "dog")], "dino": [det(0, 0, 100, 100, "dog")]})
     assert len(merged) == 1
     consensus = merged[0].attrs["consensus"]
-    assert consensus["text_similarity"] is None  # неприменимо, а не 1.0
+    assert consensus["text_similarity"] is None  # not applicable, not 1.0
     assert consensus["iou"] == pytest.approx(1.0)
-    # геометрическая шкала: потолок СТРОГО ниже дефолтного порога bulk-accept
-    # (0.9), иначе согласие одних рамок принималось бы пачкой без человека
+    # geometry scale: the ceiling is STRICTLY below the default bulk-accept
+    # threshold (0.9), else box-only agreement would be bulk-accepted with no human
     assert merged[0].confidence == pytest.approx(0.89)
     assert merged[0].confidence < 0.9
 
@@ -232,7 +232,7 @@ def test_detection_confidence_scales_with_geometry_agreement():
 
 
 def test_text_from_one_engine_only_is_not_a_disagreement():
-    # OCR дал текст, детектор — нет: сравнивать нечего, а не «тексты разошлись»
+    # OCR gave text, the detector did not: nothing to compare, not "texts differ"
     merged = merge(
         {
             "paddleocr": [ann(0, 0, 100, 20, "Total: 42")],

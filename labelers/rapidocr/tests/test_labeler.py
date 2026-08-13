@@ -1,4 +1,4 @@
-"""Тесты чистых функций RapidOCR-лейблера — без модели и без сети."""
+"""Pure-function tests for the RapidOCR labeler — no model, no network."""
 
 import io
 
@@ -9,14 +9,14 @@ from nounbox_labeler_rapidocr import RapidOCRLabeler
 from nounbox_labeler_rapidocr import labeler as mod
 from nounbox_sdk import Labeler
 
-# то, что реально приходит из RapidOCROutput: TL, TR, BR, BL
+# what actually comes out of RapidOCROutput: TL, TR, BR, BL
 BOX_A = [[86.0, 101.0], [776.0, 102.0], [776.0, 135.0], [86.0, 134.0]]
 BOX_B = [[86.0, 160.0], [500.0, 160.0], [500.0, 190.0], [86.0, 190.0]]
 SKEWED = [[172.0, 99.0], [868.0, 135.0], [866.0, 181.0], [170.0, 145.0]]
 
 
 def shoelace(points):
-    """Знаковая площадь: >0 = по часовой в экранных координатах (y вниз)."""
+    """Signed area: >0 = clockwise in screen coordinates (y pointing down)."""
     total = 0.0
     for (x1, y1), (x2, y2) in zip(points, points[1:] + points[:1]):
         total += x1 * y2 - x2 * y1
@@ -29,7 +29,7 @@ def png(width, height, color="white"):
     return buffer.getvalue()
 
 
-# --- конвертация вывода RapidOCR в Annotation ---
+# --- converting RapidOCR output into Annotation ---
 
 
 def test_converts_lines_to_annotations():
@@ -40,7 +40,7 @@ def test_converts_lines_to_annotations():
     )
     assert [a.label for a in anns] == ["text_line", "text_line"]
     assert [a.text for a in anns] == ["АКТ ВЫПОЛНЕННЫХ РАБОТ № 147/2026", "Исполнитель"]
-    # confidence РЕАЛЬНЫЙ: как отдала модель, поштучно, без округления в константу
+    # confidence is REAL: per line, exactly as the model gave it, not a constant
     assert [a.confidence for a in anns] == [0.98514, 0.9429]
     assert all(isinstance(a.confidence, float) for a in anns)
 
@@ -50,12 +50,12 @@ def test_polygon_is_four_points_clockwise():
     assert ann.geometry == [(86.0, 101.0), (776.0, 102.0), (776.0, 135.0), (86.0, 134.0)]
     assert len(ann.geometry) == 4
     assert all(isinstance(v, float) for point in ann.geometry for v in point)
-    # порядок TL -> TR -> BR -> BL сохранён: точки идут по часовой стрелке
+    # the TL -> TR -> BR -> BL order is preserved: the points run clockwise
     assert shoelace(ann.geometry) > 0
 
 
 def test_skewed_line_stays_quadrilateral():
-    """Наклонная строка не выпрямляется в axis-aligned бокс."""
+    """A slanted line is not straightened into an axis-aligned box."""
     (ann,) = mod.to_annotations([SKEWED], ("skewed",), (0.97,))
     assert ann.geometry == [(172.0, 99.0), (868.0, 135.0), (866.0, 181.0), (170.0, 145.0)]
     assert ann.geometry[0][1] != ann.geometry[1][1]
@@ -73,7 +73,7 @@ def test_numpy_boxes_and_float32_scores():
 
 
 def test_unreadable_line_is_kept_not_dropped():
-    """Детекция нашла строку, распознавание вернуло пустоту — полигон остаётся."""
+    """Detection found a line, recognition returned nothing — the polygon stays."""
     anns = mod.to_annotations([BOX_A, BOX_B], ("", "ok"), (0.11, 0.99))
     assert len(anns) == 2
     assert anns[0].text == ""
@@ -86,7 +86,7 @@ def test_degenerate_box_skipped():
     assert [a.text for a in anns] == ["good"]
 
 
-# --- фильтр по min_confidence ---
+# --- the min_confidence filter ---
 
 
 def test_min_confidence_filters_below_threshold():
@@ -109,11 +109,11 @@ def test_min_confidence_is_inclusive_on_threshold():
     assert len(anns) == 1
 
 
-# --- пустой результат ---
+# --- empty result ---
 
 
 def test_empty_page_returns_empty_list():
-    """Пустая страница: rapidocr отдаёт boxes/txts/scores = None — это не ошибка."""
+    """Empty page: rapidocr returns boxes/txts/scores = None — not an error."""
     assert mod.to_annotations(None, None, None) == []
     assert mod.to_annotations([], (), ()) == []
 
@@ -122,7 +122,7 @@ def test_partial_none_is_not_an_error():
     assert mod.to_annotations([BOX_A], None, (0.9,)) == []
 
 
-# --- разрешение языка ---
+# --- language resolution ---
 
 
 @pytest.mark.parametrize(
@@ -150,7 +150,7 @@ def test_resolve_rec_lang_rejects_unknown():
         mod.resolve_rec_lang("klingon")
 
 
-# --- ленивая инициализация движка, один инстанс на rec-модель ---
+# --- lazy engine initialization, one instance per rec model ---
 
 
 def test_engine_created_once_per_rec_model(monkeypatch):
@@ -163,15 +163,15 @@ def test_engine_created_once_per_rec_model(monkeypatch):
     monkeypatch.setattr(RapidOCRLabeler, "_create_engine", staticmethod(fake_create))
     instance = RapidOCRLabeler()
 
-    assert instance._engines == {}  # ничего не грузится до первого predict
+    assert instance._engines == {}  # nothing is loaded before the first predict
     assert instance._engine({"lang": "ru"}) == "engine:cyrillic"
-    assert instance._engine({"lang": "uk"}) == "engine:cyrillic"  # та же модель
-    assert instance._engine({}) == "engine:cyrillic"  # дефолт lang
+    assert instance._engine({"lang": "uk"}) == "engine:cyrillic"  # same model
+    assert instance._engine({}) == "engine:cyrillic"  # default lang
     assert instance._engine({"lang": "en"}) == "engine:en"
     assert created == ["cyrillic", "en"]
 
 
-# --- устойчивость: битые байты и лимит размера ---
+# --- robustness: corrupt bytes and the size limit ---
 
 
 def test_probe_image_returns_size():
@@ -215,7 +215,7 @@ def test_predict_rejects_garbage_before_loading_model(monkeypatch):
         RapidOCRLabeler().predict(b"\x00\x01\x02", {})
 
 
-# --- кеш весов ---
+# --- weight cache ---
 
 
 def test_model_dir_from_env(monkeypatch, tmp_path):
@@ -234,7 +234,7 @@ def test_model_dir_falls_back_when_unwritable(monkeypatch, tmp_path):
     assert fallback.is_dir()
 
 
-# --- контракт платформы ---
+# --- platform contract ---
 
 
 def test_satisfies_sdk_protocol():

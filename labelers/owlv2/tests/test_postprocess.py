@@ -1,4 +1,4 @@
-"""Постобработка OWLv2 — чистые функции, без загрузки модели."""
+"""OWLv2 post-processing — pure functions, no model loading."""
 
 import pytest
 
@@ -28,7 +28,7 @@ def test_iou_touching_edges_is_zero():
 
 
 def test_iou_half_overlap():
-    # пересечение 5x10=50, объединение 10*10 + 10*10 - 50 = 150
+    # intersection 5x10=50, union 10*10 + 10*10 - 50 = 150
     assert iou((0, 0, 10, 10), (5, 0, 15, 10)) == pytest.approx(50 / 150)
 
 
@@ -37,11 +37,11 @@ def test_nms_suppresses_duplicate_of_same_class():
         [det("sofa", (0, 0, 10, 10), 0.9), det("sofa", (1, 1, 11, 11), 0.5)], 0.4
     )
     assert len(kept) == 1
-    assert kept[0]["score"] == 0.9  # остаётся более уверенная
+    assert kept[0]["score"] == 0.9  # the more confident one survives
 
 
 def test_nms_keeps_different_classes_in_same_place():
-    # ковёр под столом — два объекта в одной точке, оба нужны человеку
+    # a carpet under a table — two objects in one spot, the human needs both
     kept = nms_per_class(
         [det("carpet", (0, 0, 10, 10), 0.9), det("table", (0, 0, 10, 10), 0.8)], 0.4
     )
@@ -68,17 +68,17 @@ def test_nms_output_sorted_by_score():
 
 
 def test_nms_keeps_pair_at_exactly_threshold():
-    # перекрытие ровно на пороге НЕ подавляется (условие подавления — строго больше)
+    # overlap exactly at the threshold is NOT suppressed (condition: strictly above)
     a, b = (0.0, 0.0, 10.0, 10.0), (5.0, 0.0, 15.0, 10.0)
     overlap = iou(a, b)  # 50/150 = 1/3
     assert nms_per_class([det("x", a, 0.9), det("x", b, 0.5)], overlap) != []
     assert len(nms_per_class([det("x", a, 0.9), det("x", b, 0.5)], overlap)) == 2
-    # чуть более строгий порог — дубль подавляется
+    # a slightly stricter threshold — the duplicate is suppressed
     assert len(nms_per_class([det("x", a, 0.9), det("x", b, 0.5)], overlap - 0.01)) == 1
 
 
 def test_square_box_landscape_uses_long_side():
-    # кадр 200x100: квадрат 200, бокс в центре половинного размера
+    # frame 200x100: square 200, box in the center at half size
     box = square_box_to_image((0.5, 0.25, 0.5, 0.5), 200, 100)
     assert box == pytest.approx((50.0, 0.0, 150.0, 100.0))
 
@@ -89,15 +89,15 @@ def test_square_box_portrait_uses_long_side():
 
 
 def test_square_box_clipped_to_frame():
-    # кадр 200x100, квадрат 200: бокс y 50..130 наполовину уходит в паддинг
+    # frame 200x100, square 200: box y 50..130 runs half into the padding
     box = square_box_to_image((0.5, 0.45, 0.4, 0.4), 200, 100)
     assert box is not None
     assert box[1] == pytest.approx(50.0)
-    assert box[3] == pytest.approx(100.0)  # обрезано по нижней границе кадра
+    assert box[3] == pytest.approx(100.0)  # clipped to the frame's bottom edge
 
 
 def test_square_box_degenerate_after_clip_is_dropped():
-    # целиком в области паддинга снизу — после клипа высота нулевая
+    # entirely inside the bottom padding — height is zero after clipping
     assert square_box_to_image((0.5, 0.99, 0.02, 0.02), 200, 100) is None
 
 

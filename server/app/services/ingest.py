@@ -1,16 +1,16 @@
-"""Ingest: нормализация загруженных документов в images.
+"""Ingest: normalization of uploaded documents into images.
 
-Поддерживаемые входы:
-- растровые изображения (JPEG/PNG/WebP/BMP/GIF..., включая многостраничные TIFF/GIF)
-- HEIC/HEIF (через pillow-heif)
-- PDF (каждая страница -> изображение, через pypdfium2)
-- ZIP-архивы с любым из перечисленного (строго один уровень: ZIP внутри ZIP
-  пропускается с warning и счётчиком)
+Supported inputs:
+- raster images (JPEG/PNG/WebP/BMP/GIF..., including multi-page TIFF/GIF)
+- HEIC/HEIF (via pillow-heif)
+- PDF (each page -> an image, via pypdfium2)
+- ZIP archives holding any of the above (strictly one level: a ZIP inside a
+  ZIP is skipped, with a warning and a counter)
 
-Каждая страница/кадр нормализуется в PNG + считаются хеш дедупликации
-(SHA-256 от нормализованных байтов — точные дубликаты; perceptual hash для
-near-duplicates — TODO v0.2, dHash на белых документах даёт коллизии)
-и blur score (variance of Laplacian — чем ниже, тем более смазано).
+Every page/frame is normalized to PNG, plus we compute a dedup hash
+(SHA-256 of the normalized bytes — exact duplicates; a perceptual hash for
+near-duplicates is TODO for v0.2, dHash collides on white documents)
+and a blur score (variance of Laplacian — the lower, the blurrier).
 """
 
 from __future__ import annotations
@@ -31,11 +31,11 @@ pillow_heif.register_heif_opener()
 
 logger = logging.getLogger(__name__)
 
-MAX_DIMENSION = 4096  # длинная сторона, больше — даунскейл
-PDF_SCALE = 2.0  # рендер PDF ~144 dpi
+MAX_DIMENSION = 4096  # long side; anything larger gets downscaled
+PDF_SCALE = 2.0  # renders PDFs at ~144 dpi
 ZIP_MAX_ENTRIES = 1000
-MAX_ARCHIVE_DEPTH = 1  # ZIP внутри ZIP не разворачивается (zip-квайн вешал worker)
-ZIP_MAX_UNCOMPRESSED = 1 * 1024**3  # 1 GiB суммарно распакованного на архив
+MAX_ARCHIVE_DEPTH = 1  # ZIP inside ZIP is not unpacked (a zip quine hung the worker)
+ZIP_MAX_UNCOMPRESSED = 1 * 1024**3  # 1 GiB uncompressed in total per archive
 
 
 class UnsupportedFormatError(ValueError):
@@ -49,11 +49,11 @@ class ArchiveTooLargeError(ValueError):
 @dataclass
 class NormalizedPage:
     page_index: int
-    source_name: str  # имя файла-источника (для страниц архива — entry)
+    source_name: str  # source file name (for pages from an archive — the entry)
     data: bytes  # PNG
     width: int
     height: int
-    content_hash: str  # SHA-256 нормализованных байтов (ключ дедупликации)
+    content_hash: str  # SHA-256 of the normalized bytes (dedup key)
     blur_score: float
 
 
@@ -64,12 +64,12 @@ class ExtractResult:
 
 
 def _content_hash(png_data: bytes) -> str:
-    """SHA-256 нормализованных байтов — дедуп точных дубликатов."""
+    """SHA-256 of the normalized bytes — dedup of exact duplicates."""
     return hashlib.sha256(png_data).hexdigest()
 
 
 def _blur_score(img: PILImage.Image) -> float:
-    """Variance of Laplacian. < ~100 обычно означает смазанный кадр."""
+    """Variance of Laplacian. < ~100 usually means a blurry frame."""
     gray = np.asarray(img.convert("L"), dtype=np.float32)
     lap = (
         -4 * gray[1:-1, 1:-1]
@@ -83,7 +83,7 @@ def _blur_score(img: PILImage.Image) -> float:
 
 def _normalize(img: PILImage.Image, page_index: int, source_name: str) -> NormalizedPage:
     if img.mode != "RGB":
-        # прозрачность — на белый фон
+        # flatten transparency onto a white background
         background = PILImage.new("RGB", img.size, (255, 255, 255))
         rgba = img.convert("RGBA")
         background.paste(rgba, mask=rgba.getchannel("A"))
@@ -161,7 +161,8 @@ def _from_zip(
                     f"ZIP {source_name}: uncompressed size exceeds "
                     f"limit of {ZIP_MAX_UNCOMPRESSED} bytes"
                 )
-            # сам архив — уровень depth + 1; entry-архив превысил бы лимит вложенности
+            # this archive is at depth + 1; an entry archive would exceed the
+            # nesting limit
             if depth + 1 >= MAX_ARCHIVE_DEPTH and _looks_like_zip(
                 info.filename, entry_data
             ):
@@ -176,7 +177,7 @@ def _from_zip(
             try:
                 inner = _extract(info.filename, entry_data, depth + 1, result)
             except UnsupportedFormatError:
-                continue  # неподдерживаемые файлы в архиве пропускаем
+                continue  # unsupported files inside the archive are skipped
             for page in inner:
                 page.page_index = len(pages)
                 page.source_name = info.filename
@@ -200,8 +201,8 @@ def _extract(
     if ext == "zip":
         return _from_zip(data, filename, depth, result)
 
-    # остальное — пробуем как изображение (Pillow покрывает jpeg/png/heic/tiff/...),
-    # при неудаче — вдруг это PDF/ZIP без расширения
+    # everything else — try it as an image (Pillow covers jpeg/png/heic/tiff/...),
+    # and if that fails, maybe it is a PDF/ZIP without an extension
     for extractor in (_from_pil, _from_pdf):
         try:
             return extractor(data, filename)
@@ -220,10 +221,10 @@ def _extract(
 
 
 def extract_pages(filename: str, data: bytes) -> ExtractResult:
-    """Разобрать документ в нормализованные страницы.
+    """Parse a document into normalized pages.
 
-    :raises UnsupportedFormatError: формат не поддержан
-    :raises ArchiveTooLargeError: распакованный размер архива превышает лимит
+    :raises UnsupportedFormatError: the format is not supported
+    :raises ArchiveTooLargeError: uncompressed archive size exceeds the limit
     """
     result = ExtractResult()
     result.pages = _extract(filename, data, 0, result)

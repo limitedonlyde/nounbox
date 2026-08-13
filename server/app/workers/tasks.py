@@ -1,4 +1,4 @@
-"""Фоновые задачи (arq). Запуск: arq app.workers.tasks.WorkerSettings"""
+"""Background jobs (arq). Run with: arq app.workers.tasks.WorkerSettings"""
 
 import logging
 import uuid
@@ -33,7 +33,7 @@ NO_CLASSES_ERROR = "Add project classes before starting the labeling run"
 
 
 def _as_xyxy(geometry: dict) -> tuple[float, float, float, float] | None:
-    """Геометрия аннотации -> (x1, y1, x2, y2); None для неизвестного типа."""
+    """Annotation geometry -> (x1, y1, x2, y2); None for an unknown type."""
     if geometry.get("type") == "bbox":
         x, y = float(geometry["x"]), float(geometry["y"])
         return (x, y, x + float(geometry["width"]), y + float(geometry["height"]))
@@ -55,16 +55,16 @@ def _iou(a: tuple, b: tuple) -> float:
     return inter / union if union > 0 else 0.0
 
 
-# выше этого перекрытия считаем, что движок предложил уже проверенную рамку
+# above this overlap we treat the engine's box as one already reviewed
 REVIEWED_DUPLICATE_IOU = 0.7
 
 
 
 async def run_autolabel(ctx: dict, job_id: str) -> None:
-    """Прогнать labeler'ы по всем изображениям проекта и записать аннотации.
+    """Run the labelers over every image of the project and store annotations.
 
-    Движки подхватываются из entry points (nounbox_sdk.load_labelers).
-    Если ни одного не установлено — задача завершается с пояснением в result.
+    Engines are picked up from entry points (nounbox_sdk.load_labelers).
+    If none are installed, the job finishes with an explanation in result.
     """
     from nounbox_sdk import load_labelers
 
@@ -97,14 +97,15 @@ async def run_autolabel(ctx: dict, job_id: str) -> None:
                     "No labelers installed (entry points group 'nounbox.labelers')"
                 )
 
-            # конфиг движка дополняется настройками (для modal_gpu — endpoint GPU),
-            # руками JSON пользователь не пишет
+            # the engine config is filled in from the settings (for modal_gpu —
+            # the GPU endpoint); the user never writes that JSON by hand
             settings_row = await settings_store.get_row(session)
             base_config = dict(job.payload.get("config") or {})
 
-            # detection: движок ищет ровно то, что перечислено в классах проекта.
-            # Пустой список — не «размечай всё подряд», а ошибка с подсказкой,
-            # иначе задача тихо завершится нулём аннотаций.
+            # detection: the engine looks for exactly what is listed in the
+            # project classes. An empty list is an error with a hint, not
+            # "label whatever
+            # you find" — otherwise the job quietly ends with zero annotations.
             project = await session.get(Project, job.project_id)
             if project is None:
                 raise RuntimeError("Project not found")
@@ -132,7 +133,7 @@ async def run_autolabel(ctx: dict, job_id: str) -> None:
                         name, base_config, settings_row
                     )
                 except settings_store.LabelerNotReadyError as exc:
-                    # движок запрошен явно — это ошибка задачи, а не тихий пропуск
+                    # engine requested explicitly: fail the job, not a silent skip
                     if wanted:
                         raise
                     not_ready[name] = str(exc)
@@ -152,9 +153,9 @@ async def run_autolabel(ctx: dict, job_id: str) -> None:
                 .all()
             )
 
-            # Перезапуск: список классов мог измениться, поэтому непроверенные
-            # рамки этого движка убираем и размечаем заново. Принятые и
-            # исправленные человеком не трогаем — это его работа, не машинная.
+            # Re-run: the class list may have changed, so we drop this engine's
+            # pending boxes and label again. Boxes a human accepted or edited
+            # are left alone — that is their work, not the machine's.
             rerun = bool(job.payload.get("rerun"))
             replaced = 0
             if rerun:
@@ -169,8 +170,8 @@ async def run_autolabel(ctx: dict, job_id: str) -> None:
                     replaced += result.rowcount or 0
                 await session.flush()
 
-            # проверенные человеком рамки: при перезапуске движок предложит их
-            # заново, и без этой сверки поверх принятого легли бы дубли
+            # human-reviewed boxes: on a re-run the engine proposes them again,
+            # and without this check duplicates would pile on top of accepted ones
             reviewed: dict[uuid.UUID, list[tuple[str, tuple]]] = {}
             if rerun:
                 rows = (
@@ -188,8 +189,8 @@ async def run_autolabel(ctx: dict, job_id: str) -> None:
                     if box is not None:
                         reviewed.setdefault(row.image_id, []).append((row.label, box))
 
-            # изображения, уже размеченные каждым из движков, — пропускаем.
-            # При перезапуске пропуск снимаем: ради него всё и затевалось.
+            # images already labeled by each of the engines are skipped.
+            # On a re-run the skip is lifted: that is the whole point of it.
             labeled: dict[str, set] = {}
             for name in labelers:
                 rows = (
@@ -214,7 +215,7 @@ async def run_autolabel(ctx: dict, job_id: str) -> None:
                 try:
                     data = await run_in_threadpool(storage.get_bytes, image.s3_key)
                 except Exception:
-                    # битая запись (файл отсутствует в S3) — не роняем всю задачу
+                    # broken row (file missing from S3) — don't kill the whole job
                     logger.exception("Failed to fetch image %s", image.id)
                     failed += 1
                     continue
@@ -227,9 +228,9 @@ async def run_autolabel(ctx: dict, job_id: str) -> None:
                             labeler.predict, data, configs[labeler.name]
                         )
                     except ValueError as exc:
-                        # ошибка конфигурации (нет классов, их слишком много для
-                        # движка, неверная модель) одинакова для всех кадров:
-                        # молчать нельзя — иначе задача «успешно» разметит в ноль
+                        # a config error (no classes, too many of them for the
+                        # engine, a wrong model) is the same for every frame:
+                        # staying quiet means the job "succeeds" labeling nothing
                         raise RuntimeError(f"{labeler.name}: {exc}") from exc
                     except Exception:
                         logger.exception(
@@ -262,7 +263,7 @@ async def run_autolabel(ctx: dict, job_id: str) -> None:
                                 and _iou(box, other) >= REVIEWED_DUPLICATE_IOU
                                 for label, other in checked
                             ):
-                                # это уже проверено человеком — не подсовываем заново
+                                # already reviewed by a human — don't push it again
                                 duplicates += 1
                                 continue
                         if hasattr(geom, "width"):  # BBox dataclass
@@ -309,9 +310,9 @@ async def run_autolabel(ctx: dict, job_id: str) -> None:
 
 
 async def run_ingest(ctx: dict, job_id: str) -> None:
-    """Нормализация документа -> images (PDF-страницы, HEIC, TIFF, ZIP...).
+    """Normalize a document -> images (PDF pages, HEIC, TIFF, ZIP...).
 
-    Дубликаты (по хешу нормализованного содержимого в рамках проекта) пропускаются.
+    Duplicates (by hash of the normalized content, within the project) are skipped.
     """
     from app.services import ingest
 
@@ -337,7 +338,7 @@ async def run_ingest(ctx: dict, job_id: str) -> None:
                 ingest.extract_pages, doc.filename, data
             )
 
-            # хеши уже имеющихся в проекте изображений — для дедупликации
+            # hashes of the images already in the project — for deduplication
             existing = set(
                 (
                     await session.execute(
@@ -396,11 +397,11 @@ async def run_ingest(ctx: dict, job_id: str) -> None:
 
 
 async def run_deploy_gpu(ctx: dict, job_id: str) -> None:
-    """Развернуть GPU-рецепт в аккаунт Modal пользователя.
+    """Deploy the GPU recipe into the user's Modal account.
 
-    Токен берётся из настроек и расшифровывается здесь — в payload задачи и в
-    логи он не попадает. Результат: gpu_endpoint_url + gpu_status=ready,
-    при ошибке — failed и текст в gpu_error.
+    The token is taken from the settings and decrypted here — it never reaches
+    the job payload or the logs. Result: gpu_endpoint_url + gpu_status=ready;
+    on failure — failed and the message in gpu_error.
     """
     import secrets as secrets_mod
 
@@ -426,8 +427,8 @@ async def run_deploy_gpu(ctx: dict, job_id: str) -> None:
                     "No Modal token saved — enter it on the settings page"
                 )
             token_secret = decrypt_secret(row.modal_token_secret_encrypted)
-            # эндпоинт закрываем Bearer-токеном: URL угадать трудно, но он
-            # утекает в историю браузера, логи прокси и скриншоты
+            # we close the endpoint with a Bearer token: the URL is hard to
+            # guess, but it leaks into browser history, proxy logs and screenshots
             gpu_token = settings.nounbox_gpu_token or secrets_mod.token_urlsafe(32)
             deployed = await modal_deploy.deploy_gpu_app(
                 row.modal_token_id,
@@ -449,8 +450,8 @@ async def run_deploy_gpu(ctx: dict, job_id: str) -> None:
                 "warnings": deployed.warnings,
             }
         except Exception as exc:
-            # секрет не должен просочиться ни в БД, ни в ответ API, ни в лог;
-            # traceback не пишем — в нём могут оказаться аргументы вызовов modal
+            # the secret must not seep into the DB, the API response or the log;
+            # no traceback — it can carry the arguments of the modal calls
             message = modal_deploy.scrub_secrets(str(exc), token_secret)
             logger.error("Deploy GPU job %s failed: %s", job_id, message)
             row.gpu_status = GpuStatus.FAILED
@@ -464,10 +465,10 @@ async def run_deploy_gpu(ctx: dict, job_id: str) -> None:
 
 
 class WorkerSettings:
-    # arq по умолчанию рвёт задачу через 300 с и повторяет её до 5 раз: для
-    # разметки сотен страниц и для деплоя GPU-образа (первая сборка — минуты)
-    # это гарантированный обрыв. Повтор не нужен: статус и ошибка уже пишутся
-    # в Job, а повторный autolabel лишь заново прошёл бы по тем же картинкам.
+    # arq by default kills a job after 300 s and retries it up to 5 times: for
+    # labeling hundreds of pages and for deploying the GPU image (minutes on the
+    # first build) that is a guaranteed abort. Retries are pointless: status and
+    # error already land in Job, and a repeat autolabel would redo the same images.
     functions = [
         func(run_autolabel, timeout=6 * 3600, max_tries=1),
         func(run_ingest, timeout=3600, max_tries=1),

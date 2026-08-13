@@ -49,11 +49,11 @@ async def get_project(
 async def delete_project(
     project_id: uuid.UUID, session: AsyncSession = Depends(get_session)
 ):
-    """Удалить проект вместе со всем содержимым.
+    """Delete a project together with everything in it.
 
-    Каскадов у внешних ключей нет, поэтому строки сносим сами и строго от
-    листьев к корню: иначе postgres отвечает IntegrityError и запрос падает
-    с 500 на любом непустом проекте.
+    The foreign keys have no cascades, so we wipe the rows ourselves and
+    strictly from the leaves to the root: otherwise postgres answers with an
+    IntegrityError and the request fails with a 500 on any non-empty project.
     """
     project = await session.get(Project, project_id)
     if project is None:
@@ -80,8 +80,9 @@ async def delete_project(
     image_ids = [row.id for row in images]
 
     if image_ids:
-        # parent_id аннотаций разрешается внутри одного statement: FK-проверки
-        # postgres выполняет по завершении запроса
+        # a self-referencing annotation parent_id is safe to delete in one
+        # statement: postgres runs
+        # the FK checks once the query has finished
         await session.execute(
             delete(Annotation).where(Annotation.image_id.in_(image_ids))
         )
@@ -95,8 +96,8 @@ async def delete_project(
     await session.delete(project)
     await session.commit()
 
-    # файлы — после коммита: хранилище не участвует в транзакции, и сбой
-    # удаления объекта не повод оставлять пользователю проект-призрак
+    # files come after the commit: the storage takes no part in the transaction,
+    # and a failed object delete is no reason to leave the user a ghost project
     keys = [row.s3_key for row in documents] + [row.s3_key for row in images]
     if keys:
         try:

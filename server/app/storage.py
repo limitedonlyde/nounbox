@@ -1,4 +1,4 @@
-"""S3-совместимое хранилище (MinIO). Синхронный boto3 — вызывать через run_in_threadpool."""
+"""S3-compatible storage (MinIO). boto3 is synchronous — call via run_in_threadpool."""
 
 from collections.abc import Sequence
 
@@ -7,7 +7,7 @@ from botocore.client import Config
 
 from app.config import settings
 
-# лимит S3 на количество ключей в одном delete_objects
+# S3 limit on the number of keys in a single delete_objects
 DELETE_BATCH = 1000
 
 
@@ -41,9 +41,9 @@ def get_bytes(key: str) -> bytes:
 
 
 def delete_objects(keys: Sequence[str]) -> None:
-    """Удалить объекты пачками (S3 принимает не больше 1000 ключей за запрос).
+    """Delete objects in batches (S3 accepts at most 1000 keys per request).
 
-    Отсутствующий объект ошибкой не считается — S3 удаляет идемпотентно.
+    A missing object is not an error — S3 deletes idempotently.
     """
     if not keys:
         return
@@ -57,7 +57,7 @@ def delete_objects(keys: Sequence[str]) -> None:
 
 
 def presigned_url(key: str, expires: int = 3600) -> str:
-    # SigV4 подписывает Host — генерируем через клиент с публичным endpoint
+    # SigV4 signs the Host header — generate with a client on the public endpoint
     return _client(public=True).generate_presigned_url(
         "get_object",
         Params={"Bucket": settings.s3_bucket, "Key": key},

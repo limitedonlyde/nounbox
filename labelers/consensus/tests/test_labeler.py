@@ -1,4 +1,4 @@
-"""Тесты конфигурации ConsensusLabeler (без прогонов движков)."""
+"""ConsensusLabeler configuration tests (no engines are actually run)."""
 
 import pytest
 

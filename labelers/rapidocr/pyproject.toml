@@ -8,9 +8,9 @@ version = "0.1.0"
 description = "RapidOCR labeler for Nounbox — default CPU engine (onnxruntime, per-line polygons, real confidence)"
 requires-python = ">=3.11"
 license = { text = "AGPL-3.0-only" }
-# rapidocr в метаданных жёстко требует opencv-python; в образе он ставится
-# с --no-deps плюс opencv-python-headless (см. server/Dockerfile) — иначе
-# в site-packages лежат оба варианта opencv.
+# rapidocr's metadata hard-requires opencv-python; in the image it is installed
+# with --no-deps plus opencv-python-headless (see server/Dockerfile) — otherwise
+# both opencv variants end up in site-packages.
 dependencies = [
     "nounbox-sdk",
     "rapidocr>=3.9",
@@ -28,5 +28,5 @@ include = ["nounbox_labeler_rapidocr*"]
 testpaths = ["tests"]
 addopts = "-m 'not slow'"
 markers = [
-    "slow: прогон реальной модели (веса ~13.5 МБ, секунды на страницу); запуск: pytest -m slow",
+    "slow: runs the real model (weights ~13.5 MB, seconds per page); run with: pytest -m slow",
 ]

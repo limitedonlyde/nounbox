@@ -1,8 +1,8 @@
-"""Классы объектов проекта: то, что пользователь ищет на своих фотографиях.
+"""Project object classes: what the user is looking for in their photos.
 
-Имя класса — это текстовый запрос к движку детекции (OWLv2/LLMDet) и одновременно
-Annotation.label. Внешнего ключа из аннотаций сюда нет: удаление класса не должно
-превращать уже размеченные боксы в мусор без явного согласия (см. DELETE ?force).
+A class name is both the detection engine's text prompt (OWLv2/LLMDet) and the
+Annotation.label. Annotations have no foreign key here: deleting a class must not
+turn already labeled boxes into garbage without explicit consent (see DELETE ?force).
 """
 
 import uuid
@@ -23,8 +23,8 @@ from app.schemas import (
 
 router = APIRouter(tags=["classes"])
 
-# Различимые цвета боксов (tailwind-палитра), назначаются по кругу: цвет класса
-# должен быть предсказуем, случайные оттенки сливаются друг с другом.
+# Distinguishable box colors (tailwind palette), assigned round-robin: the color
+# of a class has to be predictable, and random shades blend into each other.
 PALETTE: tuple[str, ...] = (
     "#3b82f6",  # blue
     "#ef4444",  # red
@@ -83,7 +83,7 @@ def project_images(project_id: uuid.UUID):
 async def annotations_count(
     session: AsyncSession, project_id: uuid.UUID, name: str
 ) -> int:
-    """Сколько аннотаций проекта размечено этим классом."""
+    """How many annotations in the project are labeled with this class."""
     result = await session.execute(
         select(func.count())
         .select_from(Annotation)
@@ -109,7 +109,7 @@ async def delete_annotations_for_class(
 async def rename_annotations(
     session: AsyncSession, project_id: uuid.UUID, old: str, new: str
 ) -> None:
-    """Аннотации ссылаются на класс по имени — переименование тянет их за собой."""
+    """Annotations reference a class by name, so a rename carries them along."""
     await session.execute(
         update(Annotation)
         .where(
@@ -123,8 +123,8 @@ async def rename_annotations(
 def ensure_name_free(
     existing: list[ProjectClass], name: str, skip_id: uuid.UUID | None = None
 ) -> None:
-    """Имя уникально в проекте. Сравнение без учёта регистра: «Sofa» и «sofa» —
-    один и тот же запрос к движку, два таких класса дали бы дубли боксов."""
+    """A name is unique in a project. Comparison ignores case: "Sofa" and "sofa" are
+    the same prompt to the engine, two such classes would give duplicate boxes."""
     lowered = name.casefold()
     for item in existing:
         if item.id != skip_id and item.name.casefold() == lowered:
@@ -161,7 +161,7 @@ async def create_class(
     session.add(item)
     try:
         await session.commit()
-    except IntegrityError:  # два одинаковых POST подряд — тоже конфликт, не 500
+    except IntegrityError:  # two identical POSTs in a row: also a conflict, not a 500
         await session.rollback()
         raise HTTPException(409, f"Class {body.name!r} already exists in this project")
     await session.refresh(item)
@@ -175,15 +175,15 @@ async def replace_classes(
     force: bool = Query(False),
     session: AsyncSession = Depends(get_session),
 ):
-    """Заменить список классов целиком (главный сценарий — настройка проекта).
+    """Replace the whole list of classes (the main scenario is project setup).
 
-    Уцелевшие классы сохраняют id и цвет, чтобы боксы в Review UI не перекрасились.
-    Класс, на котором уже есть аннотации, молча не выбрасываем — 409, как и в DELETE.
+    Surviving classes keep their id and color so boxes in Review UI do not change color.
+    A class that already has annotations is not dropped silently — 409, as in DELETE.
     """
     await get_project_or_404(session, project_id)
     existing = await list_classes(session, project_id)
 
-    # дубли в присланном списке — почти всегда опечатка в textarea, не ошибка
+    # duplicates in the submitted list are almost always a textarea typo, not an error
     wanted: list[str] = []
     seen: set[str] = set()
     for name in body.names:
@@ -201,7 +201,7 @@ async def replace_classes(
             in_use.append(f"{item.name} ({used})")
             in_use_total += used
     if in_use and not force:
-        # тело той же формы, что у DELETE: число первым, чтобы фронт его достал
+        # same body shape as in DELETE: the count first, so the frontend can get it
         raise HTTPException(
             409,
             {
@@ -219,8 +219,8 @@ async def replace_classes(
             await delete_annotations_for_class(session, project_id, item.name)
         await session.delete(item)
 
-    # цвет новому классу — первый свободный в палитре: уцелевшие сохраняют свой,
-    # и назначение по индексу дало бы двум классам один цвет
+    # a new class gets the first free color in the palette: survivors keep theirs,
+    # and assigning by index would give two classes the same color
     used_colors = {c.color.lower() for c in existing if c.name.casefold() in seen}
 
     result: list[ProjectClass] = []
@@ -240,7 +240,7 @@ async def replace_classes(
             )
             session.add(item)
         else:
-            if item.name != name:  # поменялся регистр — тянем аннотации за собой
+            if item.name != name:  # case changed, carry the annotations along
                 await rename_annotations(session, project_id, item.name, name)
                 item.name = name
             item.sort_order = order
@@ -282,7 +282,7 @@ async def delete_class(
     item = await get_class_or_404(session, class_id)
     used = await annotations_count(session, item.project_id, item.name)
     if used and not force:
-        # число — первым полем: UI достаёт его из тела ответа
+        # the count is the first field: the UI reads it out of the response body
         raise HTTPException(
             409,
             {

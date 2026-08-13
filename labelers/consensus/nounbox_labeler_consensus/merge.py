@@ -1,37 +1,37 @@
-"""Чистая логика консенсуса: сведение выводов N движков в один список.
+"""Pure consensus logic: merging the outputs of N engines into one list.
 
-Первый движок — primary: его геометрия считается точнее (обычно OCR),
-она и попадает в результат. Аннотации остальных (secondary) сопоставляются
-с primary жадным матчингом по убыванию IoU (любая геометрия приводится
-к ограничивающему прямоугольнику; порог — iou_threshold).
+The first engine is the primary: its geometry is taken to be the more precise
+one (usually OCR), and that is what ends up in the result. The annotations of
+the others (secondary) are matched against the primary greedily by descending
+IoU (any geometry is reduced to its bounding box; the cut-off is iou_threshold).
 
-Сопоставляются ТОЛЬКО аннотации с одинаковым label: в детекции по своим
-классам перекрытие рамок разных классов — норма (собака на диване), и
-матчинг по одной геометрии склеил бы dog с sofa, отдав в датасет неверный
-класс с высокой уверенностью. Регистр и лишние пробелы в label при сравнении
-не учитываются, в результате остаётся label primary.
+ONLY annotations with the same label are matched: in detection over the
+project's own classes, boxes of different classes overlapping is normal (a dog
+on a sofa), and matching on geometry alone would glue dog to sofa and hand the
+dataset a wrong class with high confidence. Case and extra whitespace in the
+label are ignored while comparing; the primary's label is what survives.
 
-Confidence — из степени согласия. Шкал две, потому что тексты есть не всегда:
+Confidence comes from the degree of agreement. Two scales, as text is not always there:
 
-  тексты сравнимы (обе стороны непустые) — OCR:
-    геометрия совпала, sim >= 0.95       -> 0.95
-    геометрия совпала, текст частично    -> 0.55 + 0.35 * sim
-  текста нет (детекция) или он есть лишь у одного движка — только геометрия:
-    геометрия совпала                    -> 0.60 + 0.30 * q,
+  texts are comparable (both sides non-empty) — OCR:
+    geometry matched, sim >= 0.95        -> 0.95
+    geometry matched, text partially     -> 0.55 + 0.35 * sim
+  no text (detection) or only one engine has it — geometry only:
+    geometry matched                     -> 0.60 + 0.29 * q,
                                             q = (iou - threshold) / (1 - threshold)
-  primary без пары                       -> 0.45
-  secondary без пары                     -> 0.35 (добавляется со своей геометрией)
+  primary with no partner                -> 0.45
+  secondary with no partner              -> 0.35 (added with its own geometry)
 
-Потолок геометрической шкалы (0.90) намеренно ниже 0.95: совпадение одних
-рамок — более слабое свидетельство, чем рамки плюс совпавший текст. Раньше
-шкалы не было, и для детекции (text везде None) difflib на двух пустых
-строках давал sim=1.0 — консенсус всегда выдавал максимум 0.95, то есть
-уверенность была синтетической.
+The ceiling of the geometry scale (0.89) is deliberately below 0.95: boxes
+agreeing is weaker evidence than boxes plus matching text. There used to be no
+such scale, and for detection (text is None everywhere) difflib on two empty
+strings gave sim=1.0 — consensus always emitted the maximum 0.95, i.e. the
+confidence was synthetic.
 
-Каждая аннотация получает attrs["consensus"]:
-    {"engines": [...подтвердившие...], "text_similarity": float | None,
-     "iou": float,                     # только у подтверждённых
-     "alt_text": {"<engine>": "<их вариант>"}}  # только если тексты разошлись
+Every annotation gets attrs["consensus"]:
+    {"engines": [...the confirming ones...], "text_similarity": float | None,
+     "iou": float,                     # only on confirmed ones
+     "alt_text": {"<engine>": "<their variant>"}}  # only if the texts differ
 """
 
 from __future__ import annotations
@@ -48,11 +48,11 @@ FULL_AGREEMENT_SIM = 0.95
 CONF_FULL_AGREEMENT = 0.95
 CONF_PARTIAL_BASE = 0.55
 CONF_PARTIAL_SPAN = 0.35
-# согласие только по геометрии (текста нет): 0.60 при совпадении на пороге,
-# 0.90 при полностью совпавших рамках
+# geometry-only agreement (no text): 0.60 for a match right at the threshold,
+# 0.89 for boxes that coincide exactly
 CONF_GEOMETRY_BASE = 0.60
-# потолок 0.89 — строго ниже дефолтного порога bulk-accept (0.9):
-# согласие одних рамок не должно приниматься пачкой без человека
+# ceiling 0.89 — strictly below the default bulk-accept threshold (0.9):
+# agreement on boxes alone must not be accepted in bulk without a human
 CONF_GEOMETRY_SPAN = 0.29
 CONF_PRIMARY_ONLY = 0.45
 CONF_SECONDARY_ONLY = 0.35
@@ -61,7 +61,7 @@ Box = tuple[float, float, float, float]  # (x1, y1, x2, y2)
 
 
 def to_bbox(geometry: BBox | list[tuple[float, float]]) -> Box:
-    """Любая геометрия -> (x1, y1, x2, y2); полигон — ограничивающим прямоугольником."""
+    """Any geometry -> (x1, y1, x2, y2); a polygon via its bounding box."""
     if isinstance(geometry, BBox):
         return (
             geometry.x,
@@ -85,20 +85,20 @@ def iou(a: Box, b: Box) -> float:
 
 
 def normalize_text(text: str | None) -> str:
-    """Casefold + схлопывание пробелов; None -> ""."""
+    """Casefold + whitespace collapsing; None -> ""."""
     return " ".join((text or "").split()).casefold()
 
 
 def label_key(label: str | None) -> str:
-    """Ключ сравнения классов: регистр и лишние пробелы движки пишут по-разному."""
+    """Class comparison key: engines write case and stray spaces differently."""
     return normalize_text(label)
 
 
 def text_similarity(a: str | None, b: str | None) -> float | None:
-    """Сходство текстов 0..1; None — сравнивать нечего (хотя бы один пустой).
+    """Text similarity 0..1; None — nothing to compare (at least one side empty).
 
-    Пустой текст не значит «совпало»: детектор без распознавания текста
-    не обещал ничего, а difflib на двух пустых строках возвращает 1.0.
+    Empty text does not mean "matched": a detector without text recognition
+    promised nothing, while difflib on two empty strings returns 1.0.
     """
     left, right = normalize_text(a), normalize_text(b)
     if not left or not right:
@@ -107,7 +107,7 @@ def text_similarity(a: str | None, b: str | None) -> float | None:
 
 
 def _geometry_confidence(best_iou: float, iou_threshold: float) -> float:
-    """Уверенность по одному лишь совпадению рамок: порог -> BASE, полное -> BASE+SPAN."""
+    """Confidence from box overlap alone: threshold -> BASE, exact -> BASE+SPAN."""
     span = 1.0 - iou_threshold
     quality = 1.0 if span <= 0 else (best_iou - iou_threshold) / span
     return CONF_GEOMETRY_BASE + CONF_GEOMETRY_SPAN * min(1.0, max(0.0, quality))
@@ -118,10 +118,10 @@ def _greedy_match(
     secondary: list[tuple[Box, str]],
     iou_threshold: float,
 ) -> dict[int, tuple[int, float]]:
-    """Жадный матчинг по убыванию IoU внутри одного класса.
+    """Greedy matching by descending IoU within a single class.
 
-    Вход — (bbox, ключ класса); выход — {primary_idx: (secondary_idx, iou)},
-    каждая аннотация участвует не более одного раза.
+    Input — (bbox, class key); output — {primary_idx: (secondary_idx, iou)},
+    with every annotation taking part at most once.
     """
     scored = [
         (score, i, j)
@@ -164,7 +164,7 @@ def merge(
     annotations_by_engine: dict[str, list[Annotation]],
     iou_threshold: float = DEFAULT_IOU_THRESHOLD,
 ) -> list[Annotation]:
-    """Свести выводы движков (в порядке следования, первый — primary) в один список."""
+    """Merge engine outputs (in order given, the first is primary) into one list."""
     if not annotations_by_engine:
         return []
     engine_names = list(annotations_by_engine)
@@ -172,7 +172,7 @@ def merge(
     primary = annotations_by_engine[primary_name]
     primary_keyed = _keyed(primary)
 
-    # per primary_idx: [(engine, их аннотация, iou)]; unmatched secondary -> extras
+    # per primary_idx: [(engine, its annotation, iou)]; unmatched secondary -> extras
     confirmations: list[list[tuple[str, Annotation, float]]] = [[] for _ in primary]
     extras: list[tuple[str, Annotation]] = []
 
@@ -205,8 +205,8 @@ def merge(
                 else CONF_PARTIAL_BASE + CONF_PARTIAL_SPAN * best_sim
             )
         else:
-            # текста нет (детекция) или он есть только у одного движка —
-            # согласие оцениваем по рамкам
+            # no text (detection), or only one engine has it — judge the
+            # agreement by the boxes
             best_sim = None
             confidence = _geometry_confidence(best_iou, iou_threshold)
         alt_text = {

@@ -1,4 +1,4 @@
-"""Шифрование секретов и маскирование token_id."""
+"""Secret encryption and token_id masking."""
 
 import stat
 
@@ -13,7 +13,7 @@ def test_key_file_created_with_0600(key_path):
 
     assert key_path.exists()
     assert stat.S_IMODE(key_path.stat().st_mode) == 0o600
-    Fernet(key_path.read_bytes().strip())  # валидный ключ Fernet
+    Fernet(key_path.read_bytes().strip())  # a valid Fernet key
 
 
 def test_key_is_reused_between_calls(key_path):

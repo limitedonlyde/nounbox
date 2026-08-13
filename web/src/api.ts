@@ -1,4 +1,4 @@
-/** Тип задачи проекта. Детекция объектов — основной сценарий, OCR — второй. */
+/** Project task type. Object detection is the main case, OCR the secondary one. */
 export type TaskType = "detection" | "ocr";
 
 export interface Project {
@@ -9,7 +9,7 @@ export interface Project {
   created_at: string;
 }
 
-/** Класс проекта: имя всегда английское (его получает движок как текстовый запрос). */
+/** Project class: the name is always English (the engine gets it as a text query). */
 export interface ProjectClass {
   id: string;
   name: string;
@@ -34,7 +34,7 @@ export interface ImageMeta {
   width: number;
   height: number;
   blur_score: number | null;
-  /** Человек подтвердил, что смотрел кадр (нужно для кадров без объектов). */
+  /** A human confirmed they looked at the image (needed for images with no objects). */
   reviewed: boolean;
 }
 
@@ -48,7 +48,7 @@ export interface Annotation {
   id: string;
   image_id: string;
   geometry: Geometry;
-  /** Для detection — имя класса проекта, для ocr — тип строки (text_line). */
+  /** For detection — a project class name; for ocr — the line type (text_line). */
   label: string;
   text: string | null;
   confidence: number;
@@ -81,11 +81,11 @@ export interface Labeler {
   requires: LabelerRequires;
   available: boolean;
   reason: string | null;
-  /** Типы задач движка. Если сервер поле не отдал — движок считаем универсальным. */
+  /** Task types the engine handles. If the server omits the field, it is universal. */
   tasks?: TaskType[];
 }
 
-/** Движок подходит проекту, если явно заявил его task_type (или ничего не заявил). */
+/** An engine fits a project if it explicitly lists that task type (or lists none). */
 export const labelerSupportsTask = (labeler: Labeler, task: TaskType): boolean =>
   !labeler.tasks || labeler.tasks.includes(task);
 
@@ -94,16 +94,16 @@ export const TASK_TITLES: Record<TaskType, string> = {
   ocr: "OCR (text)",
 };
 
-/** Дефолтный движок по типу задачи: owlv2 выбран по замеру (F1 0.823 на 79 фото). */
+/** Default engine per task: owlv2 was chosen by measurement (F1 0.823 on 79 photos). */
 export const DEFAULT_LABELER: Record<TaskType, string> = {
   detection: "owlv2",
   ocr: "rapidocr",
 };
 
-/** Порог движка: рамки ниже 0.25 человеку не показываем. */
+/** Engine threshold: by default boxes below 0.25 are not shown to the human. */
 export const DEFAULT_SCORE_THRESHOLD = 0.25;
 
-/** Порог пакетного принятия: на 0.40 точность предсказаний 0.94. */
+/** Bulk-accept threshold: at 0.40 the precision of the predictions is 0.94. */
 export const DEFAULT_ACCEPT_THRESHOLD: Record<TaskType, number> = {
   detection: 0.4,
   ocr: 0.9,
@@ -142,7 +142,7 @@ export class ApiError extends Error {
     this.payload = payload;
   }
 
-  /** FastAPI кладёт человеческий текст в detail (строкой или объектом с message). */
+  /** FastAPI puts the human text in detail (a string, or an object with message). */
   private static describe(status: number, body: string, payload: unknown): string {
     const detail =
       payload && typeof payload === "object"
@@ -176,8 +176,8 @@ const firstNumber = (value: unknown, depth = 0): number | null => {
 };
 
 /**
- * DELETE /classes/{id} на занятом классе отвечает 409 с числом аннотаций.
- * Точную форму тела не фиксируем — вытаскиваем первое число.
+ * DELETE /classes/{id} on a class still in use answers 409 with the annotation
+ * count. We do not pin the exact body shape — we just pull out the first number.
  */
 export const annotationsBlockingDelete = (err: unknown): number | null => {
   if (!(err instanceof ApiError) || err.status !== 409) return null;
@@ -212,7 +212,7 @@ export const api = {
     request<Project>("/projects", json("POST", { name, task_type: taskType })),
   getProject: (id: string) => request<Project>(`/projects/${id}`),
 
-  // классы проекта
+  // project classes
   listClasses: (projectId: string) =>
     request<ProjectClass[]>(`/projects/${projectId}/classes`),
   createClass: (projectId: string, name: string, color: string | null = null) =>
@@ -220,7 +220,7 @@ export const api = {
       `/projects/${projectId}/classes`,
       json("POST", { name, color })
     ),
-  /** Заменить список целиком: цвета назначает сервер. */
+  /** Replace the whole list: the server assigns the colors. */
   replaceClasses: (projectId: string, names: string[]) =>
     request<ProjectClass[]>(`/projects/${projectId}/classes`, json("PUT", { names })),
   updateClass: (
@@ -288,19 +288,19 @@ export const api = {
     projectId: string,
     labeler: string | null,
     config: Record<string, unknown>,
-    // перезапуск на уже размеченных: нужен, когда изменился список классов
+    // rerun over already-labeled images: needed when the class list changed
     rerun = false
   ) =>
     request<Job>(
       `/projects/${projectId}/autolabel`,
       json("POST", { labeler, config, rerun })
     ),
-  /** Пометить кадр просмотренным: так пустой кадр попадает в датасет как фон. */
+  /** Mark an image reviewed: an empty image then enters the dataset as background. */
   markImageReviewed: (imageId: string, reviewed: boolean) =>
     request<ImageMeta>(`/images/${imageId}`, json("PATCH", { reviewed })),
 
   getJob: (id: string) => request<Job>(`/jobs/${id}`),
-  // незавершённая задача проекта: страница подхватывает её после перезагрузки
+  // the project's unfinished job: the page picks it up again after a reload
   getActiveJob: (projectId: string) =>
     request<Job | null>(`/projects/${projectId}/jobs/active`),
 };

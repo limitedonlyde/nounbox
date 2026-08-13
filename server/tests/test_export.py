@@ -1,4 +1,4 @@
-"""Экспорт датасета: нормировка YOLO, детерминированный сплит, COCO instances."""
+"""Dataset export: YOLO normalization, deterministic split, COCO instances."""
 
 import io
 import json
@@ -71,7 +71,7 @@ def read_zip(data: bytes) -> zipfile.ZipFile:
 
 
 def yolo_label(zf: zipfile.ZipFile, image: Image) -> str:
-    """Содержимое labels/<split>/<stem>.txt для изображения."""
+    """Contents of labels/<split>/<stem>.txt for an image."""
     stem = image.id.hex
     return zf.read(f"labels/{export_service._split_of(stem)}/{stem}.txt").decode()
 
@@ -82,12 +82,12 @@ def build(fmt: str, items, task_type: str = "detection", classes=("carpet", "sof
     )
 
 
-# --- список форматов ---
+# --- format list ---
 def test_formats_filtered_by_task_type():
     assert export_service.formats_for("detection") == ("yolo_detect", "coco")
     ocr = ("paddleocr_det", "paddleocr_rec", "coco")
     assert export_service.formats_for("ocr") == ocr
-    # пустой/неизвестный task_type — дефолт detection
+    # empty/unknown task_type falls back to detection
     assert export_service.formats_for(None) == ("yolo_detect", "coco")
     assert export_service.formats_for("something_else") == ("yolo_detect", "coco")
 
@@ -145,13 +145,13 @@ def test_yolo_class_index_follows_sort_order():
     assert "nc: 3" in data_yaml
     assert "train: images/train\nval: images/val" in data_yaml
     assert '  0: "carpet"\n  1: "sofa"\n  2: "chandelier"' in data_yaml
-    # path не задаём — иначе ultralytics ищет датасет относительно cwd
+    # path is left unset — otherwise ultralytics looks for the dataset from cwd
     assert "path:" not in data_yaml
 
 
 def test_yolo_clips_box_to_image():
     image = make_image(100, 100)
-    # бокс вылезает за левый верхний угол: −10,−10 30x30 → 0,0 20x20
+    # box sticks out past the top-left corner: −10,−10 30x30 → 0,0 20x20
     zf = build("yolo_detect", [item(image, [bbox_ann("carpet", -10, -10, 30, 30)])])
     assert yolo_label(zf, image) == "0 0.100000 0.100000 0.200000 0.200000"
 
@@ -159,7 +159,7 @@ def test_yolo_clips_box_to_image():
 def test_yolo_drops_degenerate_box_but_keeps_image():
     image = make_image(100, 100)
     annotations = [
-        bbox_ann("carpet", 200, 200, 10, 10),  # целиком за кадром
+        bbox_ann("carpet", 200, 200, 10, 10),  # entirely outside the frame
         bbox_ann("carpet", 10, 10, 20, 20),
     ]
     zf = build("yolo_detect", [item(image, annotations)])
@@ -174,7 +174,7 @@ def test_yolo_polygon_becomes_bounding_box():
     image = make_image(200, 100)
     polygon = polygon_ann("carpet", [[10, 20], [110, 20], [110, 70], [10, 70]])
     zf = build("yolo_detect", [item(image, [polygon])])
-    # x 10..110 из 200 → cx=0.3, w=0.5; y 20..70 из 100 → cy=0.45, h=0.5
+    # x 10..110 of 200 → cx=0.3, w=0.5; y 20..70 of 100 → cy=0.45, h=0.5
     assert yolo_label(zf, image) == "0 0.300000 0.450000 0.500000 0.500000"
 
 
@@ -182,7 +182,7 @@ def test_yolo_skips_annotations_with_unknown_label():
     image = make_image(100, 100)
     annotations = [
         bbox_ann("carpet", 0, 0, 50, 50),
-        bbox_ann("lamp", 50, 50, 50, 50),  # класс удалён из проекта
+        bbox_ann("lamp", 50, 50, 50, 50),  # class deleted from the project
     ]
     zf = build("yolo_detect", [item(image, annotations)])
     manifest = json.loads(zf.read("manifest.json"))
@@ -192,7 +192,7 @@ def test_yolo_skips_annotations_with_unknown_label():
     assert manifest["task_type"] == "detection"
 
 
-# --- детерминированность сплита ---
+# --- split determinism ---
 def _splits(zf: zipfile.ZipFile) -> dict[str, str]:
     out = {}
     for name in zf.namelist():
@@ -217,21 +217,21 @@ def test_split_is_deterministic_between_exports():
     first = _splits(build("yolo_detect", items))
     second = _splits(build("yolo_detect", items))
     assert first == second
-    assert set(first.values()) == {"train", "val"}  # обе части непустые
+    assert set(first.values()) == {"train", "val"}  # both parts are non-empty
 
 
 def test_split_survives_added_and_removed_images():
     items = _many_items(30)
     full = _splits(build("yolo_detect", items))
     without_last = _splits(build("yolo_detect", items[:-1]))
-    # у оставшихся снимков сплит не поехал — имя файла не зависит от позиции
+    # the remaining images kept their split — the file name ignores position
     assert all(full[stem] == split for stem, split in without_last.items())
     assert len(without_last) == len(full) - 1
 
 
 def test_both_splits_are_non_empty_on_small_datasets():
-    # ultralytics падает, если папка val пустая, а на 2-5 снимках хеш легко
-    # может отправить всех в train
+    # ultralytics crashes if the val folder is empty, and on 2-5 images the
+    # hash can easily send every one of them to train
     for count in range(1, 8):
         names = build("yolo_detect", _many_items(count)).namelist()
         assert any(n.startswith("images/train/") for n in names), count
@@ -240,7 +240,7 @@ def test_both_splits_are_non_empty_on_small_datasets():
 
 
 def test_small_dataset_split_is_still_deterministic():
-    items = _many_items(3)  # все три хешируются в train, один уезжает в val
+    items = _many_items(3)  # all three hash into train, one is moved to val
     assert _splits(build("yolo_detect", items)) == _splits(build("yolo_detect", items))
 
 
@@ -262,7 +262,7 @@ def test_coco_detection_instances():
     )
     coco = json.loads(zf.read("annotations.json"))
 
-    # категории — классы проекта в порядке sort_order, id 1-based
+    # categories are the project classes in sort_order, ids 1-based
     assert coco["categories"] == [
         {"id": 1, "name": "carpet"},
         {"id": 2, "name": "sofa"},
@@ -277,9 +277,9 @@ def test_coco_detection_instances():
     assert first["bbox"] == [10, 20, 30, 40]
     assert first["area"] == 1200
     assert first["iscrowd"] == 0
-    assert first["segmentation"] == []  # только боксы, сегментации в проекте нет
+    assert first["segmentation"] == []  # boxes only, no segmentation in the project
     assert "text" not in first["attributes"]
-    # полигон приведён к ограничивающему прямоугольнику
+    # the polygon is reduced to its bounding box
     assert second["category_id"] == 1
     assert second["bbox"] == [10, 20, 100, 50]
     assert second["area"] == 5000
@@ -312,7 +312,11 @@ def test_coco_ocr_keeps_text_and_segmentation():
     assert entry["bbox"] == [10, 20, 100, 50]
 
 
-# --- ocr-форматы не сломались ---
+# --- ocr formats still work ---
+# The OCR payloads below are deliberately non-ASCII. export.py writes the
+# label file with json.dumps(..., ensure_ascii=False), and these fixtures are
+# the only thing that exercises that flag end to end: with Latin text every
+# assertion here would pass either way. Do not "clean up" the alphabet.
 def test_paddleocr_det_unchanged():
     image = make_image(200, 100)
     annotations = [
@@ -336,7 +340,7 @@ def test_paddleocr_rec_crops():
     image = make_image(200, 100)
     annotations = [
         bbox_ann("text_line", 10, 10, 50, 20, text="Итого\t7"),
-        bbox_ann("text_line", 10, 10, 50, 20),  # без текста — в rec не попадает
+        bbox_ann("text_line", 10, 10, 50, 20),  # no text — does not reach rec
     ]
     zf = build("paddleocr_rec", [item(image, annotations)], task_type="ocr", classes=())
     lines = zf.read("label.txt").decode().split("\n")
@@ -353,7 +357,7 @@ def test_manifest_lists_classes_and_task_type():
     assert manifest["classes"] == ["carpet", "sofa"]
     assert manifest["statuses_included"] == ["accepted", "edited"]
     assert manifest["project_id"] == "proj-1"
-    # единственный снимок идёт и в train, и в val: пустой val ломает ultralytics
+    # a lone image goes into both train and val: an empty val breaks ultralytics
     assert (manifest["train_images"], manifest["val_images"]) == (1, 1)
 
 
@@ -362,9 +366,9 @@ def test_empty_export_fails():
         export_service.build_zip("yolo_detect", [], "p", "detection", ("carpet",))
 
 
-# --- фоновые кадры (проверено человеком, объектов нет) ---
+# --- background frames (reviewed by a human, no objects) ---
 def _files_of(zf: zipfile.ZipFile, image: Image) -> list[str]:
-    """Пути снимка в архиве — сплит на маленькой выборке может быть переназначен."""
+    """Archive paths of an image — on a small set the split may be reassigned."""
     return [n for n in zf.namelist() if image.id.hex in n]
 
 
@@ -376,7 +380,7 @@ def test_yolo_writes_empty_label_file_for_background_frame():
     )
     labels = [n for n in _files_of(zf, background) if n.startswith("labels/")]
     assert labels and all(zf.read(n) == b"" for n in labels)
-    # картинка в датасете есть — пустой .txt рядом с ней и есть негативный пример
+    # the image is in the dataset — the empty .txt beside it is the negative example
     assert any(n.startswith("images/") for n in _files_of(zf, background))
     manifest = json.loads(zf.read("manifest.json"))
     assert manifest["images"] == 2

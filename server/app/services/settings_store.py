@@ -1,7 +1,7 @@
-"""Настройки инсталляции: чтение/создание строки, каталог движков, резолв конфига.
+"""Instance settings: reading/creating the row, engine catalog, config resolution.
 
-Два режима разметки: «просто» — rapidocr на CPU (доступен всегда),
-«сложно» — modal_gpu, доступен только когда GPU развёрнут (gpu_status=ready).
+Two labeling modes: "easy" — rapidocr on CPU (always available),
+"hard" — modal_gpu, available only once the GPU is deployed (gpu_status=ready).
 """
 
 from __future__ import annotations
@@ -19,12 +19,12 @@ from app.models import GpuStatus, InstanceSettings
 RAPIDOCR = "rapidocr"
 MODAL_GPU = "modal_gpu"
 
-# путь, который слушает GPU-рецепт (deploy/modal/paddleocr_modal.py)
+# the path the GPU recipe listens on (deploy/modal/paddleocr_modal.py)
 GPU_PREDICT_PATH = "predict"
 
 
 def predict_url(endpoint_url: str | None) -> str | None:
-    """Корень развёрнутого приложения -> URL ручки предсказания."""
+    """Root of the deployed app -> URL of the prediction endpoint."""
     if not endpoint_url:
         return endpoint_url
     base = endpoint_url.rstrip("/")
@@ -35,17 +35,17 @@ def predict_url(endpoint_url: str | None) -> str | None:
 OWLV2 = "owlv2"
 LLMDET = "llmdet"
 
-# Движки, о которых UI должен знать всегда — даже если плагин не установлен
-# (иначе пользователю негде увидеть, что GPU-режим существует, а в проекте
-# детекции список движков оказался бы пустым без объяснения).
+# Engines the UI must always know about — even when the plugin is not installed
+# (otherwise the user has nowhere to see that GPU mode exists at all, and in a
+# detection project the engine list would come out empty with no explanation).
 CORE_LABELERS = (RAPIDOCR, MODAL_GPU, OWLV2)
 
 DETECTION = ("detection",)
 OCR = ("ocr",)
 BOTH = ("detection", "ocr")
 
-# tasks — типы задач проекта, для которых движок пригоден: UI показывает
-# только подходящие. Неизвестный сторонний плагин не прячем (BOTH).
+# tasks — the project task types the engine is good for: the UI shows only
+# the fitting ones. An unknown third-party plugin is not hidden (BOTH).
 CATALOG: dict[str, dict] = {
     RAPIDOCR: {
         "title": "RapidOCR — CPU, works out of the box",
@@ -94,7 +94,7 @@ ORDER = (
 
 
 class LabelerNotReadyError(RuntimeError):
-    """Движок установлен, но не готов к работе (нет обязательных настроек)."""
+    """The engine is installed but not ready (required settings missing)."""
 
 
 async def get_row(session: AsyncSession) -> InstanceSettings | None:
@@ -117,7 +117,7 @@ async def get_or_create(session: AsyncSession) -> InstanceSettings:
 
 
 def to_out(row: InstanceSettings | None) -> dict:
-    """Публичное представление настроек. Секрет не отдаётся никогда."""
+    """Public view of the settings. The secret is never handed out."""
     if row is None:
         return {
             "modal_configured": False,
@@ -148,7 +148,7 @@ def gpu_ready(row: InstanceSettings | None) -> bool:
 
 
 def gpu_blocker(row: InstanceSettings | None) -> str | None:
-    """Почему modal_gpu недоступен; None — доступен."""
+    """Why modal_gpu is unavailable; None — it is available."""
     if gpu_ready(row):
         return None
     if row is None or not row.modal_token_secret_encrypted:
@@ -163,14 +163,14 @@ def gpu_blocker(row: InstanceSettings | None) -> str | None:
 def resolve_labeler_config(
     name: str, config: dict, row: InstanceSettings | None
 ) -> dict:
-    """Дополнить конфиг движка данными из настроек (руками JSON никто не пишет)."""
+    """Fill the engine config from the settings (nobody writes that JSON by hand)."""
     resolved = dict(config)
     if name != MODAL_GPU:
         return resolved
     blocker = gpu_blocker(row)
     if blocker is not None:
         raise LabelerNotReadyError(f"Engine {MODAL_GPU} is not ready: {blocker}")
-    # в настройках лежит корень приложения Modal, рецепт слушает POST /predict
+    # settings hold the root of the Modal app; the recipe listens on POST /predict
     resolved.setdefault("endpoint", predict_url(row.gpu_endpoint_url))
     gpu_token = app_config.nounbox_gpu_token
     if not gpu_token and row.gpu_access_token_encrypted:
@@ -185,7 +185,7 @@ def resolve_labeler_config(
 def build_labelers(
     installed: Iterable[str], row: InstanceSettings | None
 ) -> list[dict]:
-    """Установленные плагины + доступность из настроек, в порядке для UI."""
+    """Installed plugins + availability from the settings, in UI order."""
     installed = set(installed)
     names = [n for n in ORDER if n in installed or n in CORE_LABELERS]
     names += sorted(installed - set(names))

@@ -23,7 +23,7 @@ dependencies = [
     "pillow-heif>=0.16",
     "numpy>=1.26",
     "cryptography>=42",
-    # программный деплой GPU-рецепта в аккаунт Modal пользователя
+    # programmatic deploy of the GPU recipe into the user's Modal account
     "modal>=1.5.3",
 ]
 

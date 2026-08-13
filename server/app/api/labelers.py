@@ -1,4 +1,4 @@
-"""Список движков для UI: установленные плагины + доступность из настроек."""
+"""Engine list for the UI: installed plugins + availability from the settings."""
 
 from nounbox_sdk import load_labelers
 from fastapi import APIRouter, Depends

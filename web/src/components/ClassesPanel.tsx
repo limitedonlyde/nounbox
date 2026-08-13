@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { annotationsBlockingDelete, api, errorText, ProjectClass } from "../api";
 
-/** Имя класса уходит в движок как текстовый запрос — только латиница. */
+/** The class name goes to the engine as a text query — Latin letters only. */
 const ENGLISH_ONLY = /^[A-Za-z][A-Za-z0-9 _'/-]*$/;
 const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
 
@@ -199,8 +199,8 @@ function ClassesPanel({ projectId, classes, onChanged }: Props) {
               <input
                 type="color"
                 className="class-color"
-                // неконтролируемый + коммит по завершению выбора: onChange у
-                // input[type=color] стреляет на каждое движение по палитре
+                // uncontrolled + commit on blur, once the user is done picking: onChange on
+                // input[type=color] fires on every move across the palette
                 defaultValue={HEX_COLOR.test(cls.color) ? cls.color : "#3b82f6"}
                 key={`${cls.id}-${cls.color}`}
                 onBlur={(e) => {

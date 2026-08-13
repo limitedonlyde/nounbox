@@ -1,56 +1,58 @@
-"""LLMDet labeler: открытословарная детекция боксов по английским именам классов.
+"""LLMDet labeler: open-vocabulary box detection from English class names.
 
-Второй движок для task_type=detection: режим «посчитать точнее», чем дефолтный
-OWLv2, и второй голос для consensus. Модель — iSEE-Laboratory/llmdet_base
-(MM-Grounding-DINO, дообученный с LLM-супервизией), Apache-2.0, CPU.
+Second engine for task_type=detection: the "run it more accurately" mode, measurably
+more accurate than the default OWLv2, and a second voice for consensus. The model
+is iSEE-Laboratory/llmdet_base
+(MM-Grounding-DINO fine-tuned with LLM supervision), Apache-2.0, CPU.
 
-Замер платформы (79 фото / 323 объекта LVIS, ручной эталон, IoU 0.5, CPU M2):
+Platform benchmark (79 photos / 323 LVIS objects, manual ground truth, IoU 0.5,
+CPU M2):
 
-    движок               F1      P      R     с/фото   RSS
-    llmdet_base       0.853  0.881  0.827      4.0    ~4.3 ГБ
-    llmdet_tiny       0.831  0.866  0.799      2.8    ~3.8 ГБ
-    owlv2 (дефолт)    0.823                 2.0-2.4   ~1.5 ГБ
+    engine               F1      P      R    s/photo   RSS
+    llmdet_base       0.853  0.881  0.827      4.0    ~4.3 GB
+    llmdet_tiny       0.831  0.866  0.799      2.8    ~3.8 GB
+    owlv2 (default)   0.823                 2.0-2.4   ~1.5 GB
 
-при дефолтных score_threshold=0.35 и nms_iou=0.4 — отсюда и дефолты. С nms_iou=0.7
-(дефолт MM-GDINO) те же прогоны дают 0.848 / 0.822: дубли на одном объекте не
-гасятся и уходят человеку в ревью. Порог 0.35 — компромисс замера: на 0.30 F1
-чуть выше (0.857), но точность падает с 0.881 до 0.851, то есть каждая седьмая
-рамка ложная.
+measured at the default score_threshold=0.35 and nms_iou=0.4 — hence those
+defaults. With nms_iou=0.7 (the MM-GDINO default) the same runs give 0.848 /
+0.822: duplicates on one object are not suppressed and go to a human reviewer.
+The 0.35 threshold is the benchmark's compromise: at 0.30 F1 is slightly higher
+(0.857), but precision drops from 0.881 to 0.851, i.e. every seventh box is false.
 
 Config:
-    classes: list[str]            — английские имена классов проекта (обязательно)
-    score_threshold: float = 0.35 — ниже порога рамки не отдаются
-    nms_iou: float = 0.4          — подавление дублей внутри одного класса
-    model: str = "base"           — "base" | "tiny" | полный repo id с HF; каждая
-                                    названная модель остаётся в памяти воркера
-                                    до конца процесса (base ~4.3 ГБ)
-    max_detections: int = 100     — потолок рамок на изображение
-    max_pixels: int               — лимит площади картинки (env LLMDET_MAX_PIXELS)
+    classes: list[str]            — the project's English class names (required)
+    score_threshold: float = 0.35 — boxes below the threshold are not returned
+    nms_iou: float = 0.4          — suppresses duplicates within a single class
+    model: str = "base"           — "base" | "tiny" | a full HF repo id; every
+                                    model named here stays in the worker's
+                                    memory until the process exits (base ~4.3 GB)
+    max_detections: int = 100     — the cap on boxes per image
+    max_pixels: int               — image area limit (env LLMDET_MAX_PIXELS)
 
-Веса кешируются в OVD_MODEL_DIR (дефолт /data/ovd-models — тот же docker-volume,
-что у owlv2; если каталог не создать — обычный кеш huggingface). base — 1.6 ГБ,
-tiny — 0.7 ГБ, качаются один раз.
+Weights are cached in OVD_MODEL_DIR (default /data/ovd-models — the same docker
+volume owlv2 uses; if the directory cannot be created, the plain huggingface
+cache). base is 1.6 GB, tiny is 0.7 GB, and both are downloaded once.
 
-ЛИМИТ 91 КЛАСС. У модели фиксированная голова классификации на max_text_len=256
-токенов, а промпт — это все классы одной строкой «carpet. sofa. chandelier.».
-Промпт длиннее 256 токенов роняет forward внутри transformers невнятным
-«RuntimeError: The size of tensor a (256) must match the size of tensor b (319)».
-Поэтому лимит ловится ЗАРАНЕЕ, до загрузки модели, по числу классов, и второй раз
-по факту токенизации (длинные многословные имена съедают лимит быстрее).
+THE 91-CLASS LIMIT. The model's classification head is fixed at max_text_len=256
+tokens, and the prompt is every class in one string, "carpet. sofa. chandelier.".
+A prompt over 256 tokens crashes the forward inside transformers with an opaque
+"RuntimeError: The size of tensor a (256) must match the size of tensor b (319)".
+So the limit is caught UP FRONT, before the model loads, from the class count,
+and a second time on the actual tokenization (long multi-word names eat it faster).
 
-Почему не чанкинг. Разбить 100 классов на пачки по 30 и слить результаты
-технически можно, но замер это запрещает: при чанкинге 27% рамок садятся на
-объект с ярлыком из чужой пачки — модель без конкурирующих классов в промпте
-уверенно называет диван ковром. Лучше внятно отправить пользователя на owlv2,
-который инвариантен к длине списка.
+Why not chunking. Splitting 100 classes into batches of 30 and merging the
+results is technically possible, but the benchmark forbids it: with chunking 27%
+of the boxes land on an object with a label from another batch — with no
+competing classes in the prompt, the model confidently calls a sofa a carpet.
+Better to send the user clearly to owlv2, which is invariant to the list length.
 
-Почему свои скоры, а не post_process_grounded_object_detection. Стоковый
-постпроцессор декодирует ФРАЗУ по каждой рамке и склеивает соседние классы
-(«cutting board toilet paper»), после чего рамка не отображается ни на один
-класс проекта и просто теряется. Здесь скор класса считается официальным для
-MM-GDINO способом — средним сигмоиды логитов по токенам этого класса
-(positive map), — то есть каждая рамка получает свой скор по КАЖДОМУ классу
-запроса, и рамки эмитируются по классам независимо.
+Why our own scores instead of post_process_grounded_object_detection. The stock
+post-processor decodes a PHRASE per box and glues neighboring classes together
+("cutting board toilet paper"), after which the box maps to no project class at
+all and is simply lost. Here the class score is computed the way MM-GDINO does
+it officially — the mean of the sigmoid of the logits over that class's tokens
+(the positive map) — so every box gets its own score for EVERY requested class,
+and boxes are emitted per class independently.
 """
 
 from __future__ import annotations
@@ -72,7 +74,7 @@ logger = logging.getLogger(__name__)
 ENV_MODEL_DIR = "OVD_MODEL_DIR"
 ENV_MAX_PIXELS = "LLMDET_MAX_PIXELS"
 
-# общий с owlv2 кеш весов: один volume на все открытословарные детекторы
+# weight cache shared with owlv2: one volume for every open-vocabulary detector
 DEFAULT_MODEL_DIR = "/data/ovd-models"
 
 MODEL_ALIASES = {
@@ -81,36 +83,36 @@ MODEL_ALIASES = {
 }
 DEFAULT_MODEL = MODEL_ALIASES["base"]
 
-# сколько классов помещается в промпт: 256 токенов головы / ~2.8 токена на класс
+# how many classes fit in the prompt: the head's 256 tokens / ~2.8 tokens per class
 MAX_CLASSES = 91
-# config.max_text_len модели; берётся из конфига загруженной модели, это дефолт
+# the model's config.max_text_len; read from the loaded model, this is the default
 DEFAULT_MAX_TEXT_TOKENS = 256
 
 DEFAULT_SCORE_THRESHOLD = 0.35
 DEFAULT_NMS_IOU = 0.4
 DEFAULT_MAX_DETECTIONS = 100
 
-# ingest нормализует страницы до 4096 по длинной стороне (~16.8 Мп) — лимит с запасом
+# ingest normalizes pages to 4096 on the long side (~16.8 MP) — a generous limit
 DEFAULT_MAX_PIXELS = 40_000_000
 
-# рамка тоньше пикселя бесполезна для обучения и не рисуется в ревью
+# a box thinner than a pixel is useless for training and is not drawn in review
 MIN_BOX_SIDE = 1.0
 
 
 @dataclass(frozen=True)
 class Detection:
-    """Сырая рамка движка: класс, скор, xyxy в абсолютных пикселях."""
+    """A raw box from the engine: class, score, xyxy in absolute pixels."""
 
     label: str
     score: float
     box: tuple[float, float, float, float]
 
 
-# --- конфигурация ---
+# --- configuration ---
 
 
 def resolve_model(config: dict) -> str:
-    """Имя модели из config: алиас base/tiny или полный repo id huggingface."""
+    """Model name from config: the base/tiny alias or a full huggingface repo id."""
     raw = str(config.get("model") or "").strip() or DEFAULT_MODEL
     alias = MODEL_ALIASES.get(raw.lower())
     if alias:
@@ -124,11 +126,11 @@ def resolve_model(config: dict) -> str:
 
 
 def resolve_classes(config: dict) -> list[str]:
-    """Классы проекта из config: как есть (регистр сохраняем), без пустых и дублей.
+    """Project classes from config: as-is (case preserved), no blanks or dupes.
 
-    Возвращаются ОРИГИНАЛЬНЫЕ имена — они уходят в Annotation.label и должны
-    совпасть с project_classes.name; в промпт они попадают в нижнем регистре
-    (см. build_prompt), так этого требует токенизатор модели.
+    The ORIGINAL names are returned — they go into Annotation.label and have to
+    match project_classes.name; they reach the prompt lowercased (see
+    build_prompt), because that is what the model's tokenizer wants.
     """
     raw = config.get("classes")
     if raw is None:
@@ -169,7 +171,7 @@ def resolve_classes(config: dict) -> list[str]:
 
 
 def check_class_limit(classes: Sequence[str]) -> None:
-    """Лимит промпта — ДО загрузки модели: иначе будет невнятный RuntimeError."""
+    """Prompt limit, BEFORE the model loads: otherwise an opaque RuntimeError."""
     if len(classes) > MAX_CLASSES:
         raise ValueError(
             f"llmdet: LLMDet takes at most {MAX_CLASSES} classes per request, "
@@ -178,7 +180,7 @@ def check_class_limit(classes: Sequence[str]) -> None:
 
 
 def check_prompt_tokens(n_tokens: int, max_text_len: int, n_classes: int) -> None:
-    """Второй рубеж: длинные многословные имена выбирают лимит раньше 91 класса."""
+    """Second gate: long multi-word names hit the limit before 91 classes do."""
     if n_tokens > max_text_len:
         raise ValueError(
             f"llmdet: a prompt with {n_classes} classes takes {n_tokens} tokens, "
@@ -188,7 +190,7 @@ def check_prompt_tokens(n_tokens: int, max_text_len: int, n_classes: int) -> Non
 
 
 def option(config: dict, key: str, default: float) -> float:
-    """Число из config; null (а он приезжает из JSON-payload задачи) — это дефолт."""
+    """Number from config; a null (from the job's JSON payload) means the default."""
     value = config.get(key)
     if value is None:
         return default
@@ -201,7 +203,7 @@ def option(config: dict, key: str, default: float) -> float:
 
 
 def model_dir() -> str | None:
-    """Каталог кеша весов: env -> дефолт (docker volume) -> None (штатный кеш HF)."""
+    """Weight cache dir: env -> default (docker volume) -> None (stock HF cache)."""
     path = Path(os.environ.get(ENV_MODEL_DIR) or DEFAULT_MODEL_DIR)
     try:
         path.mkdir(parents=True, exist_ok=True)
@@ -217,7 +219,7 @@ def model_dir() -> str | None:
 
 
 def max_pixels(config: dict) -> int:
-    """Лимит площади изображения: config -> env -> дефолт."""
+    """Image area limit: config -> env -> default."""
     raw = (
         config.get("max_pixels") or os.environ.get(ENV_MAX_PIXELS) or DEFAULT_MAX_PIXELS
     )
@@ -228,10 +230,10 @@ def max_pixels(config: dict) -> int:
 
 
 def load_image(image: bytes, limit: int) -> PILImage.Image:
-    """Байты -> RGB-картинка.
+    """Bytes -> an RGB image.
 
-    Битые данные и бомбы превращаются во внятную ошибку, а не в падение
-    где-то внутри processor'а.
+    Corrupt data and decompression bombs turn into a clear error rather than a
+    crash somewhere inside the processor.
     """
     if not image:
         raise ValueError("llmdet: empty image payload")
@@ -261,15 +263,15 @@ def load_image(image: bytes, limit: int) -> PILImage.Image:
         ) from exc
 
 
-# --- промпт и разбор выхода модели ---
+# --- the prompt and parsing the model output ---
 
 
 def build_prompt(classes: Sequence[str]) -> str:
-    """Классы -> строка промпта «carpet. sofa. chandelier.».
+    """Classes -> the prompt string "carpet. sofa. chandelier.".
 
-    Формат ровно тот, что собирает сам processor из списка меток: нижний регистр,
-    разделитель «. », точка в конце. Собираем сами, потому что по этой же точке
-    потом восстанавливаются токенные диапазоны классов.
+    Exactly the format the processor builds from a label list itself: lowercase,
+    ". " as the separator, a trailing dot. We build it ourselves because that
+    same dot is what the class token spans are later recovered from.
     """
     labels = [" ".join(str(name).strip().lower().split()) for name in classes]
     return ". ".join(labels) + "."
@@ -281,10 +283,10 @@ def class_spans(
     special_ids: Iterable[int],
     n_classes: int,
 ) -> list[list[int]]:
-    """Индексы токенов по каждому классу — промпт режется по точкам.
+    """Token indices for each class — the prompt is split on the dots.
 
-    Многословный класс («cutting board») и класс, разбитый на wordpiece'ы
-    («chan ##del ##ier»), дают несколько индексов: скор класса — среднее по ним.
+    A multi-word class ("cutting board") and a class broken into wordpieces
+    ("chan ##del ##ier") give several indices: the class score is their mean.
     """
     skip = set(special_ids)
     spans: list[list[int]] = []
@@ -311,7 +313,7 @@ def scale_box(
     width: int,
     height: int,
 ) -> tuple[float, float, float, float]:
-    """cxcywh в долях картинки -> xyxy в пикселях, обрезано по границам кадра."""
+    """cxcywh as image fractions -> xyxy in pixels, clipped to the frame."""
     x1 = (cx - w / 2) * width
     y1 = (cy - h / 2) * height
     x2 = (cx + w / 2) * width
@@ -325,7 +327,7 @@ def scale_box(
 
 
 def iou(a: Sequence[float], b: Sequence[float]) -> float:
-    """IoU двух xyxy-рамок."""
+    """IoU of two xyxy boxes."""
     ix1, iy1 = max(a[0], b[0]), max(a[1], b[1])
     ix2, iy2 = min(a[2], b[2]), min(a[3], b[3])
     inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
@@ -338,11 +340,11 @@ def iou(a: Sequence[float], b: Sequence[float]) -> float:
 
 
 def nms_per_class(detections: Sequence[Detection], nms_iou: float) -> list[Detection]:
-    """Жадный NMS ВНУТРИ класса: два объекта разных классов могут перекрываться.
+    """Greedy NMS WITHIN a class: two objects of different classes may overlap.
 
-    Рамка «wine bottle» поверх рамки «bottle» — нормальная разметка, глушить её
-    нельзя; а два одинаковых ярлыка на одном объекте — дубль, который человек
-    вынужден удалять руками.
+    A "wine bottle" box on top of a "bottle" box is legitimate labeling and must
+    not be suppressed; two identical labels on one object, on the other hand,
+    are a duplicate a human is forced to delete by hand.
     """
     kept: list[Detection] = []
     for detection in sorted(detections, key=lambda d: -d.score):
@@ -360,7 +362,7 @@ def to_annotations(
     nms_iou: float = DEFAULT_NMS_IOU,
     max_detections: int = DEFAULT_MAX_DETECTIONS,
 ) -> list[Annotation]:
-    """Сырые рамки -> аннотации SDK: порог, NMS по классам, потолок, BBox."""
+    """Raw boxes -> SDK annotations: threshold, per-class NMS, cap, BBox."""
     above = [d for d in detections if d.score >= score_threshold]
     degenerate = 0
     survivors: list[Detection] = []
@@ -398,11 +400,11 @@ def to_annotations(
     ]
 
 
-# --- загруженная модель ---
+# --- the loaded model ---
 
 
 class Engine:
-    """processor + модель одного repo id. Создаётся лениво, живёт до конца процесса."""
+    """Processor + model for one repo id; lazy, kept until the process exits."""
 
     def __init__(self, model_id: str) -> None:
         from transformers import AutoModelForZeroShotObjectDetection, AutoProcessor
@@ -437,7 +439,7 @@ class Engine:
         classes: Sequence[str],
         score_threshold: float,
     ) -> list[Detection]:
-        """Один forward -> рамки по КАЖДОМУ классу запроса (positive map, см. модуль)."""
+        """One forward -> boxes for EVERY class (positive map, see module docstring)."""
         import torch
 
         prompt = build_prompt(classes)
@@ -454,9 +456,9 @@ class Engine:
 
         with torch.no_grad():
             outputs = self.model(**inputs)
-        # logits: (queries, max_text_len) — скор рамки по каждому токену промпта
+        # logits: (queries, max_text_len) — box score for every prompt token
         scores_per_token = outputs.logits[0].sigmoid()
-        boxes = outputs.pred_boxes[0]  # (queries, 4), cxcywh в долях кадра
+        boxes = outputs.pred_boxes[0]  # (queries, 4), cxcywh as frame fractions
         width, height = image.size
 
         found: list[Detection] = []
@@ -486,7 +488,7 @@ class LLMDetLabeler:
         self._engines: dict[str, Engine] = {}  # model id -> Engine
         self._lock = threading.Lock()
 
-    # --- инициализация движка (лениво, один раз на модель) ---
+    # --- engine initialization (lazy, once per model) ---
 
     def _engine(self, model_id: str) -> Engine:
         with self._lock:
@@ -498,11 +500,11 @@ class LLMDetLabeler:
     def _create_engine(model_id: str) -> Engine:
         return Engine(model_id)
 
-    # --- SDK-контракт ---
+    # --- the SDK contract ---
 
     def predict(self, image: bytes, config: dict) -> list[Annotation]:
-        # конфиг проверяется первым: ошибка в классах не должна стоить
-        # загрузки 1.6 ГБ весов
+        # config is validated first: an error in the classes must not cost
+        # a 1.6 GB download of the weights
         classes = resolve_classes(config)
         model_id = resolve_model(config)
         score_threshold = option(config, "score_threshold", DEFAULT_SCORE_THRESHOLD)

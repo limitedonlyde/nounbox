@@ -17,8 +17,8 @@ from app.models import Base
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Создание таблиц при старте — только для каркаса v0.1.
-    # TODO: заменить на Alembic-миграции до публикации.
+    # Creating tables at startup — only for the v0.1 skeleton.
+    # TODO: replace with Alembic migrations before release.
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     await run_in_threadpool(storage.ensure_bucket)
@@ -40,11 +40,11 @@ app.add_middleware(
 
 @app.exception_handler(RequestValidationError)
 async def validation_error_handler(request: Request, exc: RequestValidationError):
-    """422 без эха присланного тела.
+    """422 without echoing back the submitted body.
 
-    Штатный обработчик FastAPI возвращает поле input с тем, что прислал клиент,
-    и на PUT /settings это отправило бы токен Modal обратно в браузер (а оттуда
-    в логи прокси и консоль). Оставляем только тип, путь и сообщение.
+    FastAPI's stock handler returns an "input" field with what the client sent,
+    and on PUT /settings that would send the Modal token back to the browser
+    (and from there into proxy logs and the console). We keep type, loc and msg.
     """
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

@@ -16,8 +16,8 @@ router = APIRouter(tags=["export"])
 
 
 async def _project_classes(session: AsyncSession, project_id: uuid.UUID) -> list[str]:
-    """Имена классов проекта в порядке sort_order: порядок задаёт class_idx в YOLO
-    и category_id в COCO, поэтому он должен быть таким же, как в UI."""
+    """Project class names in sort_order: the order defines class_idx in YOLO and
+    category_id in COCO, so it has to be the same as in the UI."""
     result = await session.execute(
         select(ProjectClass.name)
         .where(ProjectClass.project_id == project_id)
@@ -29,14 +29,14 @@ async def _project_classes(session: AsyncSession, project_id: uuid.UUID) -> list
 async def _reviewed_images(
     session: AsyncSession, project_id: uuid.UUID
 ) -> list[Image]:
-    """Кадры проекта, которые человек уже смотрел.
+    """Project frames a human has already looked at.
 
-    Кадр без единой рамки — легальный негативный пример, но только если он
-    проверен: есть аннотация в accepted/edited/rejected либо стоит
-    Image.reviewed. Непросмотренные кадры в датасет не идут, иначе
-    неразмеченный объект уедет в обучение как фон.
+    A frame without a single box is a legitimate negative example, but only
+    if it has been checked: it has an annotation in accepted/edited/rejected,
+    or Image.reviewed is set. Unreviewed frames stay out of the dataset,
+    otherwise an unlabeled object goes into training as background.
     """
-    # кадр несёт готовую разметку — идёт в датасет вместе с ней
+    # the frame carries finished labels, so it goes into the dataset with them
     has_exportable = (
         select(Annotation.id)
         .where(
@@ -45,9 +45,10 @@ async def _reviewed_images(
         )
         .exists()
     )
-    # кадр-кандидат в фон. Одного «человек что-то тут решал» мало: если рядом
-    # осталась непросмотренная рамка, кадр НЕ пустой — он недоделанный, и
-    # пустой файл меток научил бы модель считать объект фоном.
+    # candidate background frame. "A human decided something here" is not enough: if
+    # an unreviewed box is still left on that frame, it is NOT empty but merely
+    # unfinished, and an empty label file would teach the model to treat the
+    # object as background.
     has_pending = (
         select(Annotation.id)
         .where(
@@ -75,8 +76,8 @@ async def _reviewed_images(
             Document.project_id == project_id,
             or_(has_exportable, empty_and_checked),
         )
-        # id — тайбрейкер: created_at у пачки кадров одного документа совпадает,
-        # а от порядка зависят имена файлов и image_id в COCO
+        # id is the tiebreaker: created_at is the same for a batch of frames from
+        # one document, and file names and image_id in COCO depend on the order
         .order_by(Image.created_at, Image.id)
     )
     return list(result.scalars().all())
@@ -85,7 +86,7 @@ async def _reviewed_images(
 async def _exportable_annotations(
     session: AsyncSession, project_id: uuid.UUID
 ) -> dict[uuid.UUID, list[Annotation]]:
-    """Проверенные аннотации проекта, сгруппированные по изображению."""
+    """Reviewed annotations of the project, grouped by image."""
     result = await session.execute(
         select(Annotation)
         .join(Image, Annotation.image_id == Image.id)
@@ -106,7 +107,7 @@ async def _exportable_annotations(
 async def export_formats(
     project_id: uuid.UUID, session: AsyncSession = Depends(get_session)
 ):
-    """Форматы, доступные проекту (зависят от task_type)."""
+    """Formats available to the project (they depend on task_type)."""
     project = await session.get(Project, project_id)
     if project is None:
         raise HTTPException(404, "Project not found")
@@ -122,7 +123,7 @@ async def export_project(
     format: str | None = None,
     session: AsyncSession = Depends(get_session),
 ):
-    """Скачать ZIP с датасетом. Только проверенные аннотации (accepted/edited)."""
+    """Download a ZIP with the dataset. Reviewed annotations only (accepted/edited)."""
     project = await session.get(Project, project_id)
     if project is None:
         raise HTTPException(404, "Project not found")
@@ -144,7 +145,8 @@ async def export_project(
     items = []
     for image in images:
         data = await run_in_threadpool(storage.get_bytes, image.s3_key)
-        # аннотаций может не быть вовсе: проверенный пустой кадр — фоновый пример
+        # annotations may be absent entirely: a reviewed empty frame is a
+        # background example
         items.append(
             export_service.ExportItem(image, data, by_image.get(image.id, []))
         )

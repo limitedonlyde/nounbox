@@ -20,5 +20,5 @@ data/
 .vscode/
 web/tsconfig.tsbuildinfo
 
-# внутренний журнал работы — не для публикации
+# internal work log — never committed
 .local/

@@ -1,8 +1,8 @@
-"""Шифрование секретов настроек (Fernet).
+"""Encryption of settings secrets (Fernet).
 
-Ключ пользователь не генерирует руками: при первом обращении платформа создаёт
-его сама в файле settings_key_path (volume, права 0600). Переопределяется
-переменной окружения SETTINGS_ENCRYPTION_KEY.
+The user never generates the key by hand: on first use the platform creates it
+itself in the file at settings_key_path (volume, mode 0600). Overridden by the
+SETTINGS_ENCRYPTION_KEY environment variable.
 """
 
 from __future__ import annotations
@@ -21,18 +21,18 @@ logger = logging.getLogger(__name__)
 
 
 class SecretKeyError(RuntimeError):
-    """Ключ шифрования недоступен или испорчен."""
+    """The encryption key is unavailable or corrupted."""
 
 
 class SecretDecryptError(RuntimeError):
-    """Секрет не расшифровывается текущим ключом."""
+    """The secret does not decrypt with the current key."""
 
 
 def _generate_key_file(path: Path) -> bytes:
     path.parent.mkdir(parents=True, exist_ok=True)
     key = Fernet.generate_key()
     try:
-        # O_EXCL: два процесса (api и worker) стартуют одновременно — победит один
+        # O_EXCL: two processes (api and worker) start at once — one of them wins
         fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
     except FileExistsError:
         return path.read_bytes().strip()

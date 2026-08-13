@@ -1,14 +1,15 @@
-"""Защита ручек, которые распоряжаются чужими деньгами и секретами.
+"""Protection for the endpoints that can spend the owner's money and hold
+their secrets.
 
-Полноценной аутентификации в платформе пока нет — она одно-пользовательская и
-слушает localhost. Но ручки настроек особые: через них вводится API-токен
-Modal и запускается деплой в чужой аккаунт. Любой, кто дотянулся до порта
-(проброс, reverse-proxy, коллега в той же сети), мог бы потратить чужой
-GPU-бюджет. Поэтому здесь — общий токен доступа из окружения.
+The platform has no real authentication yet — it is single-user and listens on
+localhost. But the settings endpoints are special: they take the Modal API
+token and start a deploy into the user's own Modal account. Anyone who reaches
+port (a port forward, a reverse proxy, a colleague on the same network) could
+spend that person's GPU budget. Hence a shared access token from the environment.
 
-APP_ACCESS_TOKEN пуст (дефолт) — ручки открыты, как раньше, но платформа
-предупреждает об этом в логе и в ответе GET /settings, чтобы отсутствие
-защиты нельзя было не заметить.
+APP_ACCESS_TOKEN empty (the default) — the endpoints stay open, as before, but
+the platform warns about it in the log and in the GET /settings response, so
+that the missing protection is impossible to overlook.
 """
 
 from __future__ import annotations
@@ -30,7 +31,7 @@ def access_token_configured() -> bool:
 
 
 def require_access(request: Request) -> None:
-    """Зависимость FastAPI: пускает при верном Bearer-токене."""
+    """FastAPI dependency: lets the request through on a valid Bearer token."""
     global _warned
     expected = settings.app_access_token
     if not expected:

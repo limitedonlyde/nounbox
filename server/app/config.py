@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
 
     s3_endpoint_url: str = "http://localhost:9000"
-    # публичный endpoint для presigned URL (их открывает браузер с хоста)
+    # public endpoint for presigned URLs (the browser on the host opens them)
     s3_public_endpoint_url: str = "http://localhost:9000"
     s3_access_key: str = "autolabel"
     s3_secret_key: str = "autolabel123"
@@ -18,21 +18,21 @@ class Settings(BaseSettings):
 
     cors_origins: str = "http://localhost:5173"
 
-    # Ключ шифрования секретов настроек. Генерируется сам при первом старте
-    # в файл (volume, права 0600); settings_encryption_key его переопределяет.
+    # Encryption key for settings secrets. Generated automatically on first
+    # start into a file (volume, mode 0600); settings_encryption_key wins over it.
     settings_key_path: str = "/data/settings.key"
     settings_encryption_key: str = ""
 
-    # Режим «сложно»: платформа сама разворачивает GPU-рецепт в аккаунт Modal
-    # пользователя. Путь к рецепту по умолчанию — рядом с кодом сервера.
-    # пустое имя -> деплой под именем приложения из самого рецепта
+    # "Hard" mode: the platform deploys the GPU recipe into the user's own
+    # Modal account. The default recipe path sits next to the server code.
+    # empty name -> deploy under the app name from the recipe itself
     modal_gpu_app_name: str = "nounbox-gpu"
     modal_gpu_recipe_path: str = ""
-    # если задан, рецепт закрывает /predict заголовком Bearer, а worker
-    # подставляет тот же токен в конфиг движка modal_gpu
+    # if set, the recipe protects /predict with a Bearer header, and the
+    # worker puts the same token into the modal_gpu engine config
     nounbox_gpu_token: str = ""
-    # Общий токен доступа к ручкам настроек (токен Modal, деплой GPU).
-    # Пусто — ручки открыты, платформа предупреждает об этом.
+    # Shared access token for the settings endpoints (Modal token, GPU deploy).
+    # Empty — the endpoints are open, and the platform warns about it.
     app_access_token: str = ""
 
     @property

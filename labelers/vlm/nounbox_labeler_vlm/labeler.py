@@ -1,9 +1,9 @@
-"""VLM labeler: страница целиком -> боксы + текст через OpenAI-compatible API.
+"""VLM labeler: the whole page -> boxes + text via an OpenAI-compatible API.
 
-Работает с Ollama (qwen2.5vl, minicpm-v...), vLLM, OpenAI и любыми
-совместимыми endpoint'ами — меняется только base_url/model в config.
+Works with Ollama (qwen2.5vl, minicpm-v...), vLLM, OpenAI and any compatible
+endpoint — only base_url/model in the config change.
 
-Разрешение настроек: config -> переменная окружения -> дефолт:
+Settings resolution: config -> environment variable -> default:
     base_url:  env VLM_BASE_URL, default http://host.docker.internal:11434/v1
     api_key:   env VLM_API_KEY, default "ollama"
     model:     env VLM_MODEL, default "qwen2.5vl:7b"
@@ -11,12 +11,12 @@
     max_tokens: int, default 4096
     temperature: float, default 0.0
 
-api_key задаётся через VLM_API_KEY на сервере, а не в UI-конфиге:
-config попадает в Job.payload и оседает в БД открытым текстом.
+api_key is set through VLM_API_KEY on the server, not in the UI config:
+the config ends up in Job.payload and is stored in the DB in plain text.
 
-VLM не возвращает confidence — проставляется синтетический reported_confidence.
-Дефолт 0.5 намеренно ниже типового порога bulk-accept: разметка VLM должна
-пройти ревью человеком.
+A VLM returns no confidence — a synthetic reported_confidence is filled in.
+The default of 0.5 is deliberately below a typical bulk-accept threshold: VLM
+annotations must go through human review.
 """
 
 from __future__ import annotations
@@ -108,7 +108,7 @@ class VlmLabeler:
 
     @staticmethod
     def _sniff_mime(image: bytes) -> str:
-        """MIME по магическим байтам; ingest нормализует в PNG — это и дефолт."""
+        """MIME from the magic bytes; ingest normalizes to PNG — hence the default."""
         if image[:4] == b"\x89PNG":
             return "image/png"
         if image[:2] == b"\xff\xd8":
@@ -129,15 +129,15 @@ class VlmLabeler:
 
     @staticmethod
     def _extract_array(content: str) -> list | None:
-        """Первый полный top-level JSON-массив.
+        """The first complete top-level JSON array.
 
-        Сбалансированный скан с учётом строк и экранирования: жадный
-        regex ловил бы всё от первой '[' до последней ']' и ломался,
-        когда после массива идёт проза со скобками или второй массив.
-        Кандидаты, не являющиеся валидным JSON (скобки в прозе),
-        пропускаются. Массив без dict-элементов (например, голые
-        координаты в прозе) — только fallback: настоящий массив
-        аннотаций может идти дальше по тексту.
+        A balanced scan that accounts for strings and escaping: a greedy
+        regex would grab everything from the first '[' to the last ']' and
+        break as soon as the array is followed by prose with brackets or by
+        a second array. Candidates that are not valid JSON (brackets in
+        prose) are skipped. An array with no dict elements (bare coordinates
+        in prose, for instance) is only a fallback: the real array of
+        annotations may come further down the text.
         """
         fallback = None
         start = content.find("[")
@@ -179,7 +179,7 @@ class VlmLabeler:
     def _parse(
         content: str, width: int, height: int, confidence: float
     ) -> list[Annotation]:
-        """Извлечь JSON-массив из ответа, отвалидировать и обрезать боксы."""
+        """Extract the JSON array from the reply, validate and clamp the boxes."""
         data = VlmLabeler._extract_array(VlmLabeler._strip_fences(content))
         if data is None:
             raise ValueError(f"VLM returned no JSON array: {content[:200]!r}")
