@@ -1,0 +1,82 @@
+name: Feature request
+description: Suggest something that would make labeling faster or less painful
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please skim `ROADMAP.md` first. It lists what is already planned — and,
+        at the end, what is deliberately **not planned** (multi-user accounts,
+        training inside the platform, video/3D/keypoints, a dataset
+        marketplace). Requests for those will be closed with a pointer to that
+        section.
+
+        Half-formed ideas and "has anyone tried..." are welcome too — those fit
+        better in Discussions.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: >-
+        What are you trying to label, and what slows you down today? Describe
+        the situation rather than the feature — it often has a cheaper solution.
+      placeholder: |
+        I label frames from a fixed camera. Boxes barely move between frames,
+        but I redraw them on every image.
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: What you would like to happen
+      description: Concretely — a button, a field, an export format, a flag.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Review UI (drawing, editing, navigation)
+        - Detection engines and prompts
+        - Export and import formats
+        - Ingest (upload, PDF, HEIC, folders)
+        - Deployment, Docker, configuration
+        - GPU on Modal
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Workarounds you tried
+      description: Other tools, scripts, or a way of using the platform that almost works.
+
+  - type: dropdown
+    id: contribute
+    attributes:
+      label: Would you like to implement it?
+      description: >-
+        Not required at all. New detection engines are plugins and need no
+        changes to the core — see `CONTRIBUTING.md`.
+      options:
+        - "No"
+        - "Maybe, with some guidance"
+        - "Yes"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and discussions
+          required: true
+        - label: I checked that this is not under "Not planned" in ROADMAP.md
+          required: true

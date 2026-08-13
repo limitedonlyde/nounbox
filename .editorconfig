@@ -1,0 +1,37 @@
+# Editor defaults matching the style already in the tree.
+# https://editorconfig.org
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+# Python, TOML, Dockerfiles and nginx.conf — the bulk of the repo
+indent_size = 4
+
+# Frontend sources and configuration files use two-space steps
+[*.{ts,tsx,js,jsx,mjs,cjs,css,html,json,jsonc,yml,yaml}]
+indent_size = 2
+
+[*.py]
+indent_size = 4
+max_line_length = 88
+
+# Prose wraps at 80; two trailing spaces are a hard line break in Markdown
+[*.md]
+indent_size = 2
+max_line_length = 80
+trim_trailing_whitespace = false
+
+# Generated or vendored — leave exactly as written
+[{package-lock.json,LICENSE}]
+indent_style = unset
+indent_size = unset
+insert_final_newline = unset
+trim_trailing_whitespace = unset
+
+[Makefile]
+indent_style = tab

@@ -5,7 +5,14 @@
 Self-hosted auto-labeling for object detection. No accounts, no API keys, no
 GPU, and nothing leaves your machine.
 
+[![tests](https://github.com/limitedonlyde/AutoLabelUi/actions/workflows/test.yml/badge.svg)](https://github.com/limitedonlyde/AutoLabelUi/actions/workflows/test.yml)
+[![license: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
+[![images: GHCR](https://img.shields.io/badge/images-ghcr.io-2496ed?logo=docker&logoColor=white)](https://github.com/limitedonlyde/AutoLabelUi/pkgs/container/autolabelui-server)
+
 ![AutoLabelUi in action](docs/demo.gif)
+
+*Five class names, four photos, fourteen boxes — then a human fixes the one that
+is off and exports YOLO.*
 
 > **Status: early.** The core loop works end to end and is covered by tests, but
 > the API and the database schema still move between releases, there is no
@@ -15,7 +22,7 @@ GPU, and nothing leaves your machine.
 ## Quickstart
 
 ```bash
-curl -fsSLO https://raw.githubusercontent.com/OWNER/AutoLabelUi/main/docker-compose.ghcr.yml
+curl -fsSLO https://raw.githubusercontent.com/limitedonlyde/AutoLabelUi/main/docker-compose.ghcr.yml
 docker compose -f docker-compose.ghcr.yml up -d
 ```
 
@@ -27,10 +34,9 @@ compiled on your machine: Docker and roughly 3 GB of disk are all it takes. The
 detector weights (~620 MB) download once on the first autolabel run and are
 cached in a volume.
 
-> Replace `OWNER` with the GitHub account this repository lives under —
-> lowercase, container image names have no capitals. Either edit the file once
-> or keep it untouched and set `AUTOLABELUI_OWNER=…` in a `.env` beside it.
-> `AUTOLABELUI_TAG=v0.1.0` pins a release; the default, `latest`, tracks `main`.
+> Running your own fork? Point the images at your account with
+> `AUTOLABELUI_OWNER=your-account` in a `.env` beside the compose file.
+> `AUTOLABELUI_TAG=v0.2.0` pins a release; the default, `latest`, tracks `main`.
 
 Everything else is optional. Defaults are the development credentials from
 [`.env.example`](.env.example); to change them — or the S3 endpoint, or the VLM
@@ -46,7 +52,7 @@ keys — drop a `.env` next to the compose file.
 ### Build from source instead
 
 ```bash
-git clone https://github.com/OWNER/AutoLabelUi && cd AutoLabelUi
+git clone https://github.com/limitedonlyde/AutoLabelUi && cd AutoLabelUi
 cp .env.example .env
 docker compose -f docker-compose.yml up -d --build
 ```
@@ -55,6 +61,26 @@ Slower (the backend image is ~1.7 GB and takes minutes to assemble), but it is
 the path to take when you patch the server, add a labeler plugin, or want
 PaddleOCR compiled in (`WITH_PADDLE=1`). See
 [CONTRIBUTING.md](CONTRIBUTING.md) for the hot-reload dev setup.
+
+## What it looks like
+
+**Say what to look for.** Class names are free text, and nothing is trained in
+advance — `microwave oven` and `slow cooker` work the same way `person` does.
+
+![Project page: classes, engine and export](docs/project.jpg)
+
+**Check the machine's work, do not redo it.** The queue serves the least
+confident boxes first. Drag a handle to fix geometry, press a digit to change
+the class, `A` to accept. The colour of a box is its class; the count next to
+each class is how many are on this image.
+
+![Review page: boxes, handles, class legend](docs/review.jpg)
+
+**Bring a GPU only if you want one.** The default engine runs on the CPU. If
+your batches get big, paste a Modal token and the platform deploys the GPU
+recipe into your own account — you pay Modal directly, and it scales to zero.
+
+![Settings page: optional GPU](docs/settings.jpg)
 
 ## Why this exists
 

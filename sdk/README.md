@@ -1,7 +1,7 @@
 # autolabelui-sdk
 
-Контракт labeler-плагина для AutoLabelUi. Реализуй протокол `Labeler` и
-зарегистрируй через entry points — платформа подхватит движок автоматически.
+The labeler plugin contract for AutoLabelUi. Implement the `Labeler` protocol and
+register it through entry points — the platform picks the engine up automatically.
 
 ```python
 from autolabelui_sdk import Annotation, BBox, Capability
@@ -16,7 +16,7 @@ class MyLabeler:
 ```
 
 ```toml
-# pyproject.toml твоего плагина
+# pyproject.toml of your plugin
 [project.entry-points."autolabelui.labelers"]
 my_ocr = "my_package:MyLabeler"
 ```

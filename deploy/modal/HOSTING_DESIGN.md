@@ -1,147 +1,149 @@
-# Хостинг всей платформы на Modal — проектный документ
+# Hosting the whole platform on Modal — design document
 
-> Режим «нет своего сервера — одна команда, и всё крутится на Modal».
-> **Дополнение** к docker-compose (основной self-hosted путь), не замена.
-> Видение: ядро лёгкое и запускается где угодно; тяжёлый GPU-инференс уже вынесен
-> на Modal (`deploy/modal/vlm.py`, `deploy/modal/paddleocr_modal.py`) — здесь
-> проектируем вынос самого ядра (API + worker + БД + файлы + UI).
+> The "no server of my own — one command and it all runs on Modal" mode.
+> **A complement** to docker-compose (the primary self-hosted path), not a replacement.
+> The vision: the core stays light and runs anywhere; heavy GPU inference has already
+> been offloaded to Modal (`deploy/modal/vlm.py`, `deploy/modal/paddleocr_modal.py`) —
+> what we design here is offloading the core itself (API + worker + DB + files + UI).
 
-Статус: дизайн (код не менялся). Дата исследования: 2026-08-11.
+Status: design (no code was changed). Research date: 2026-08-11.
 
 ---
 
-## 0. Врезка: GPU-рецепт в автодеплое из UI
+## 0. Sidebar: the GPU recipe auto-deployed from the UI
 
-Отдельная от этого документа, уже принятая владельцем схема: разметка живёт в двух
-режимах — **ПРОСТО** (`rapidocr`, CPU, работает сразу после `docker compose up`) и
-**СЛОЖНО** (`modal_gpu`, по желанию). Второй режим платформа поднимает сама, а
-`paddleocr_modal.py` — тот самый рецепт, который она деплоит.
+A scheme separate from this document, already approved by the owner: labeling runs in
+two modes — **SIMPLE** (`rapidocr`, CPU, works right after `docker compose up`) and
+**ADVANCED** (`modal_gpu`, optional). The platform brings the second mode up on its
+own, and `paddleocr_modal.py` is the very recipe it deploys.
 
-Поток: пользователь вписывает на странице настроек API-токен Modal
-(`ak-…` / `as-…`, то что даёт `modal token new`; `PUT /api/v1/settings`) и жмёт
-«Подключить GPU» (`POST /api/v1/settings/gpu/deploy` → Job типа `DEPLOY_GPU`).
-Платформа импортирует `deploy/modal/paddleocr_modal.py`, берёт объект `app` с уровня
-модуля и вызывает `modal.runner.deploy_app(app, name="autolabelui-paddleocr",
-client=modal.Client.from_credentials(...))`; URL достаёт отдельным
+The flow: on the settings page the user pastes a Modal API token
+(`ak-…` / `as-…`, what `modal token new` hands out; `PUT /api/v1/settings`) and presses
+"Connect GPU" (`POST /api/v1/settings/gpu/deploy` → a Job of type `DEPLOY_GPU`).
+The platform imports `deploy/modal/paddleocr_modal.py`, takes the module-level `app`
+object and calls `modal.runner.deploy_app(app, name="autolabelui-paddleocr",
+client=modal.Client.from_credentials(...))`; the URL is fetched separately with
 `modal.Function.from_name(app, "fastapi_app", client=…).hydrate(client=…).get_web_url()`
-(в `DeployResult` его нет) и кладёт в `settings.gpu_endpoint_url`. Дальше worker в
-`run_autolabel` сам подставляет endpoint в конфиг движка `modal_gpu` — руками JSON
-никто не пишет.
+(it is not part of `DeployResult`) and stored in `settings.gpu_endpoint_url`. From
+there the worker in `run_autolabel` substitutes the endpoint into the `modal_gpu`
+engine config by itself — nobody writes JSON by hand.
 
-Что из этого следует для рецепта (и уже сделано):
-- `app` на уровне модуля, импорт без побочных эффектов и без чтения локальных файлов —
-  деплой идёт из FastAPI-процесса, а не из CLI;
-- файл самодостаточен: `include_source=True` монтирует в контейнер Modal РОВНО этот
-  один `.py`, любой `from ...` из монорепо там не разрешится;
-- токен доступа: если у процесса-деплойщика задан `AUTOLABELUI_GPU_TOKEN`, он
-  запекается в Secret приложения (`Secret.from_dict`, читается при импорте — значит
-  выставлять переменную нужно ДО импорта модуля) и `/predict` начинает требовать
-  `Authorization: Bearer <token>`; переменной нет — эндпоинт открыт по неугадываемому
-  URL, как было;
-- кнопка идемпотентна бесплатно: повторный деплой — новая версия (rolling), при
-  отсутствии изменений Modal отвечает «Deployment skipped». `strategy="recreate"`
-  не использовать — убьёт живые контейнеры.
+What follows from this for the recipe (and is already done):
+- `app` at module level, imports free of side effects and of reading local files —
+  the deploy runs from the FastAPI process, not from the CLI;
+- the file is self-contained: `include_source=True` mounts EXACTLY this one `.py`
+  into the Modal container, so any `from ...` reaching into the monorepo will not
+  resolve there;
+- access token: if the deploying process has `AUTOLABELUI_GPU_TOKEN` set, it is baked
+  into the app's Secret (`Secret.from_dict`, read at import time — meaning the variable
+  must be set BEFORE the module is imported) and `/predict` starts requiring
+  `Authorization: Bearer <token>`; with no variable set, the endpoint stays open behind
+  an unguessable URL, as before;
+- the button is idempotent for free: a repeat deploy is a new version (rolling), and
+  when nothing changed Modal answers "Deployment skipped". Do not use
+  `strategy="recreate"` — it kills live containers.
 
-Проверка после деплоя: `GET /health` отдаёт `{"auth": "bearer"|"open",
-"engines_loaded": N}` — этим платформа убеждается, что контейнер поднялся на GPU и
-что токен доехал. Первый `POST /predict` дополнительно платит за скачивание весов
-PP-OCRv5 (кешируются в Volume `autolabelui-paddlex-cache`), поэтому «прогревать»
-эндпоинт лучше крошечным PNG, а не первой реальной страницей пользователя.
+The post-deploy check: `GET /health` returns `{"auth": "bearer"|"open",
+"engines_loaded": N}` — this is how the platform confirms that the container came up
+on a GPU and that the token made it through. The first `POST /predict` additionally
+pays for downloading the PP-OCRv5 weights (cached in the `autolabelui-paddlex-cache`
+Volume), so it is better to "warm" the endpoint with a tiny PNG than with the user's
+first real page.
 
 ---
 
-## 1. Что даёт Modal (сводка исследования)
+## 1. What Modal gives us (research summary)
 
-Факты из актуальной документации, на которые опирается дизайн:
+Facts from the current documentation that this design rests on:
 
-**Web endpoints / ASGI.** `@modal.asgi_app()` отдаёт целое FastAPI-приложение как
+**Web endpoints / ASGI.** `@modal.asgi_app()` serves a whole FastAPI application as a
 web endpoint (`https://<workspace>--<app>-<fn>.modal.run`); `@modal.concurrent(max_inputs=N)`
-позволяет одному контейнеру обслуживать N запросов параллельно (event loop ASGI).
-Тело запроса до 4 GiB. Кастомные домены — только Team/Enterprise план; на Starter
-остаёмся на `*.modal.run`. Защита endpoint'а — Proxy Auth Tokens
-(`requires_proxy_auth=True`, заголовки `Modal-Key`/`Modal-Secret` или
-`Authorization: Bearer <id>.<secret>`), но браузерному UI такие заголовки не
-подставить — для UI нужен собственный токен-механизм (см. §5).
+lets a single container serve N requests in parallel (the ASGI event loop).
+Request body up to 4 GiB. Custom domains are Team/Enterprise plan only; on Starter we
+stay on `*.modal.run`. Endpoint protection is Proxy Auth Tokens
+(`requires_proxy_auth=True`, the `Modal-Key`/`Modal-Secret` headers or
+`Authorization: Bearer <id>.<secret>`), but a browser UI cannot supply such headers —
+the UI needs a token mechanism of its own (see §5).
 
-**Cold start.** Boot контейнера ~1 с; реальную задержку даёт инициализация
-приложения (импорты, модели). Инструменты: `scaledown_window` (2 с … 20 мин,
-дефолт 60 с), `min_containers` (не опускаться до нуля — но платим за idle),
-`buffer_containers`, memory snapshots (снимок прогретой памяти — «substantially
-reduce cold start latency»).
+**Cold start.** Container boot is ~1 s; the real latency comes from application
+initialization (imports, models). The tools: `scaledown_window` (2 s … 20 min, default
+60 s), `min_containers` (never drop to zero — but you pay for idle),
+`buffer_containers`, memory snapshots (a snapshot of warmed-up memory — "substantially
+reduce cold start latency").
 
-**Volumes.** Распределённая ФС с коммитами: ручной `.commit()` + фоновые
-автокоммиты «каждые несколько секунд» и финальный снапшот при остановке.
-Семантика — **last write wins по файлам**; «concurrent modifications of the same
-files should be avoided»; **file locking не поддерживается** («nor is distributed
-file locking supported»). Пропускная способность до 2,5 GB/s, деградация при
->50 000 файлов (v1), Volumes v2 масштабируются лучше, но правило «один писатель
-на файл» остаётся. **Вывод для СУБД:** любая база на Volume допустима только при
-строго одном контейнере-писателе; атомарность коммита нескольких файлов
-(например, `*.db` + `*-wal`) не гарантируется — нужны свои чекпоинты/бэкапы.
-Это ключевое ограничение всего дизайна.
+**Volumes.** A distributed filesystem with commits: a manual `.commit()` plus
+background autocommits "every few seconds" and a final snapshot on stop.
+The semantics are **last write wins, per file**; "concurrent modifications of the same
+files should be avoided"; **file locking is not supported** ("nor is distributed
+file locking supported"). Throughput up to 2.5 GB/s, degradation past 50,000 files
+(v1); Volumes v2 scale better, but the "one writer per file" rule stands.
+**The conclusion for a DBMS:** any database on a Volume is acceptable only with
+strictly one writer container; atomicity of a commit spanning several files
+(`*.db` + `*-wal`, for instance) is not guaranteed — you need your own
+checkpoints/backups. This is the key constraint on the entire design.
 
-**Sandboxes.** Контейнеры, создаваемые в рантайме, для недоверенного кода: max
-lifetime 24 ч, эфемерные, есть tunnels и volume-mount. Как «дом» для платформы
-не годятся (ограничение времени жизни, ручной lifecycle), но это готовый
-механизм для будущего запуска **сторонних labeler-плагинов в изоляции** (v0.3+).
+**Sandboxes.** Containers created at runtime, meant for untrusted code: max lifetime
+24 h, ephemeral, with tunnels and volume mounts. Not suitable as a "home" for the
+platform (the lifetime cap, the manual lifecycle), but it is a ready-made mechanism
+for later running **third-party labeler plugins in isolation** (v0.3+).
 
-**Dict / Queue.** Queue: элемент ≤ 1 MiB, ≤ 5 000 элементов на партицию,
-партиция очищается через 24 ч после последнего put. Годится как транспорт
-очереди, но проще и надёжнее `Function.spawn()`: возвращает `FunctionCall`,
-результат опрашивается по id до 7 дней, есть `retries`/`timeout` на функции.
-Dict пригодится для progress-репортинга длинных джобов (не критично для v1).
+**Dict / Queue.** Queue: item ≤ 1 MiB, ≤ 5,000 items per partition, a partition is
+cleared 24 h after the last put. Usable as a queue transport, but `Function.spawn()`
+is simpler and more reliable: it returns a `FunctionCall`, the result can be polled by
+id for up to 7 days, and functions support `retries`/`timeout`. Dict will come in handy
+for progress reporting on long jobs (not critical for v1).
 
-**Auto Endpoints (managed).** `modal endpoint create --model <hf-id>` — управляемый
-OpenAI-совместимый endpoint (`/v1`), scale-to-zero, оплата только за компьют,
-код рецепта открыт. Каталог: семейства Qwen, Kimi, Gemma, DeepSeek, Nemotron,
-GPT-OSS, GLM. **Vision-модели (Qwen2.5-VL / Qwen3-VL) в каталоге документацией
-не подтверждены** (в блоге упоминается «vision-language model Endpoint», но
-конкретных VL-моделей в списке нет). Значит для VLM-labeler'а остаётся наш
-`deploy/modal/vlm.py` (vLLM + Qwen2.5-VL); стоит периодически проверять каталог —
-как только VL-модели появятся, рецепт можно заменить одной командой. Официальный
-пример Modal с SGLang + Qwen-VL — запасной вариант рецепта.
+**Auto Endpoints (managed).** `modal endpoint create --model <hf-id>` — a managed
+OpenAI-compatible endpoint (`/v1`), scale-to-zero, billed for compute only, with the
+recipe's source open. The catalog: the Qwen, Kimi, Gemma, DeepSeek, Nemotron, GPT-OSS
+and GLM families. **Vision models (Qwen2.5-VL / Qwen3-VL) are not confirmed to be in
+the catalog by the documentation** (the blog mentions a "vision-language model
+Endpoint", but no specific VL models appear in the list). So for the VLM labeler our
+own `deploy/modal/vlm.py` (vLLM + Qwen2.5-VL) remains; the catalog is worth rechecking
+periodically — as soon as VL models show up, the recipe can be replaced with a single
+command. Modal's official SGLang + Qwen-VL example is the fallback recipe.
 
-**Цены (актуальные).** CPU $0.0000131/физ.ядро/с (минимум 0.125 ядра),
-RAM $0.00000222/GiB/с, GPU: T4 $0.000164/с (≈$0.59/ч), L4 $0.000222/с (≈$0.80/ч),
-A100-80GB $0.000694/с, H100 $0.001097/с. Volume $0.09/GiB/мес (с включённой
-квотой). Starter-план: **$30/мес бесплатных кредитов**, оплата только за
-фактическое время работы контейнеров (idle при scale-to-zero не тарифицируется;
-при `min_containers=1` — тарифицируется).
+**Pricing (current).** CPU $0.0000131/physical core/s (0.125 cores minimum),
+RAM $0.00000222/GiB/s, GPU: T4 $0.000164/s (≈$0.59/h), L4 $0.000222/s (≈$0.80/h),
+A100-80GB $0.000694/s, H100 $0.001097/s. Volume $0.09/GiB/month (with an included
+quota). The Starter plan: **$30/month of free credits**, billed only for the time
+containers actually run (idle under scale-to-zero is not billed; with
+`min_containers=1` it is).
 
 ---
 
-## 2. Текущая привязка кода к инфраструктуре
+## 2. How the code is currently tied to infrastructure
 
-Что именно держит ядро на docker-compose (по файлам):
+What exactly keeps the core on docker-compose, file by file:
 
-| Зависимость | Где в коде | Что мешает Modal-режиму |
+| Dependency | Where in the code | What blocks Modal mode |
 |---|---|---|
-| Postgres (asyncpg) | `server/app/db.py`, `config.py: database_url` | нужен работающий Postgres |
-| Диалект-специфика PG | `server/app/models.py` (`JSONB`, `UUID` из `sqlalchemy.dialects.postgresql`), `workers/tasks.py:70` (`.astext`) | не заведётся на SQLite |
-| MinIO/S3 | `server/app/storage.py` (boto3, presigned URL) | нужен S3-сервис |
-| Redis + arq | `main.py` (`create_pool`), `api/documents.py:50`, `api/jobs.py:32` (`enqueue_job`), `workers/tasks.py` (`WorkerSettings`) | нужен Redis и отдельный процесс-воркер |
-| UI как отдельный dev-сервер | `web/` (Vite, прокси на api) | нужен второй HTTP-сервис |
+| Postgres (asyncpg) | `server/app/db.py`, `config.py: database_url` | needs a running Postgres |
+| PG dialect specifics | `server/app/models.py` (`JSONB`, `UUID` from `sqlalchemy.dialects.postgresql`), `workers/tasks.py:70` (`.astext`) | will not start on SQLite |
+| MinIO/S3 | `server/app/storage.py` (boto3, presigned URLs) | needs an S3 service |
+| Redis + arq | `main.py` (`create_pool`), `api/documents.py:50`, `api/jobs.py:32` (`enqueue_job`), `workers/tasks.py` (`WorkerSettings`) | needs Redis and a separate worker process |
+| UI as a separate dev server | `web/` (Vite, proxying to the api) | needs a second HTTP service |
 
-Сами задачи (`run_ingest`, `run_autolabel`) — обычные async-функции без
-привязки к arq, кроме сигнатуры `(ctx, job_id)`: переносимы как есть.
+The tasks themselves (`run_ingest`, `run_autolabel`) are ordinary async functions with
+no arq ties beyond the `(ctx, job_id)` signature: portable as they are.
 
 ---
 
-## 3. Вариант A — «Modal-native lite»: ASGI + SQLite + Volume + spawn
+## 3. Option A — "Modal-native lite": ASGI + SQLite + Volume + spawn
 
-### Архитектура
+### Architecture
 
-Один Modal App `autolabelui-platform`, один класс-сервис, **один контейнер**:
+One Modal App `autolabelui-platform`, one service class, **one container**:
 
 ```python
-# deploy/modal/platform.py (эскиз)
+# deploy/modal/platform.py (sketch)
 data_vol = modal.Volume.from_name("autolabelui-data", create_if_missing=True)
 
 @app.cls(
     image=image,                      # server + sdk + labelers/http,vlm + web/dist
     volumes={"/data": data_vol},
-    max_containers=1,                 # ЕДИНСТВЕННЫЙ писатель SQLite и файлов
-    scaledown_window=1200,            # 20 мин — максимум
+    max_containers=1,                 # THE ONLY writer of SQLite and of the files
+    scaledown_window=1200,            # 20 min — the maximum
     timeout=3600,
 )
 @modal.concurrent(max_inputs=32)
@@ -157,255 +159,258 @@ class Platform:
         await getattr(tasks, task)({}, job_id)
 ```
 
-- **БД**: SQLite на Volume (`sqlite+aiosqlite:////data/autolabel.db`).
-- **Файлы**: тот же Volume (`/data/objects/...`) вместо MinIO.
-- **Очередь**: `Platform().run_job.spawn("run_ingest", job_id)` вместо
-  `arq.enqueue_job`. При `max_containers=1` spawn попадает в **тот же контейнер
-  и процесс** → тот же SQLite-коннект, и — важно — пока джоб выполняется, он
-  считается активным input'ом: контейнер не скейлится в ноль посреди ingest'а.
-- **UI**: `web/dist` (vite build) раздаётся самим FastAPI через `StaticFiles` —
-  один endpoint на всё.
-- **GPU-инференс**: без изменений — HTTP/VLM-labeler'ы ходят в отдельные
-  Modal-приложения (`vlm.py`, `paddleocr_modal.py`) или в Auto Endpoint.
+- **DB**: SQLite on the Volume (`sqlite+aiosqlite:////data/autolabel.db`).
+- **Files**: the same Volume (`/data/objects/...`) instead of MinIO.
+- **Queue**: `Platform().run_job.spawn("run_ingest", job_id)` instead of
+  `arq.enqueue_job`. With `max_containers=1` the spawn lands in **the same container
+  and process** → the same SQLite connection, and — importantly — while the job runs it
+  counts as an active input: the container will not scale to zero in the middle of an
+  ingest.
+- **UI**: `web/dist` (a vite build) is served by FastAPI itself through `StaticFiles` —
+  one endpoint for everything.
+- **GPU inference**: unchanged — the HTTP/VLM labelers call out to separate Modal apps
+  (`vlm.py`, `paddleocr_modal.py`) or to an Auto Endpoint.
 
-### Необходимые изменения кода (все полезны и для compose)
+### Code changes required (all of them useful for compose too)
 
-1. `server/app/models.py` — портируемые типы:
+1. `server/app/models.py` — portable types:
    `JSONB` → `JSON().with_variant(JSONB, "postgresql")`;
-   `UUID(as_uuid=True)` (диалект PG) → `sqlalchemy.Uuid` (SA 2.0, на SQLite —
-   CHAR(32), на PG — родной uuid). Поведение на Postgres не меняется.
+   `UUID(as_uuid=True)` (the PG dialect) → `sqlalchemy.Uuid` (SA 2.0 — CHAR(32) on
+   SQLite, native uuid on PG). Behavior on Postgres does not change.
 2. `server/app/workers/tasks.py:70` — `Annotation.source["name"].astext` →
-   `.as_string()` (портируемый аксессор; на PG компилируется в `->>`).
+   `.as_string()` (a portable accessor; compiles to `->>` on PG).
 3. `server/app/config.py` — `storage_backend: s3|local`, `local_storage_dir`,
    `queue_backend: arq|modal`, `serve_static: bool`.
-4. `server/app/storage.py` — интерфейс с двумя реализациями: текущая S3 и
-   `LocalStorage` (файлы в каталоге на Volume; `presigned_url` → подписанный
-   HMAC-токеном роут `GET /api/v1/files/{key}?exp=&sig=`). Один новый роут.
-5. Новый `server/app/queue.py` — `async def enqueue(request, task, job_id)`:
-   arq-реализация (текущее поведение) и modal-реализация
+4. `server/app/storage.py` — an interface with two implementations: the current S3 one
+   and `LocalStorage` (files in a directory on the Volume; `presigned_url` → an
+   HMAC-signed route `GET /api/v1/files/{key}?exp=&sig=`). One new route.
+5. A new `server/app/queue.py` — `async def enqueue(request, task, job_id)`: an arq
+   implementation (the current behavior) and a modal one
    (`modal.Cls.from_name("autolabelui-platform", "Platform")().run_job.spawn(...)`).
-   `main.py` создаёт arq-pool только при `queue_backend=arq`.
-6. `server/app/db.py` — для SQLite: `PRAGMA journal_mode=WAL`,
-   `busy_timeout`, NullPool; `pyproject.toml` + `aiosqlite`.
-7. Новый `deploy/modal/platform.py` (~100 строк) — эскиз выше.
+   `main.py` creates the arq pool only when `queue_backend=arq`.
+6. `server/app/db.py` — for SQLite: `PRAGMA journal_mode=WAL`, `busy_timeout`,
+   NullPool; `pyproject.toml` + `aiosqlite`.
+7. A new `deploy/modal/platform.py` (~100 lines) — the sketch above.
 
-### Свойства
+### Properties
 
-- **Cold start**: ~1 с контейнер + 2–4 с импорты FastAPI/SQLAlchemy; с memory
-  snapshot — заметно меньше. При желании `min_containers=1` убирает cold start
-  совсем (см. цену). После 20 мин тишины первый запрос ждёт несколько секунд —
-  для инструмента разметки приемлемо.
-- **Персистентность**: SQLite и файлы переживают рестарты через коммиты Volume.
-  Риск: фоновый коммит не атомарен между `*.db` и `*-wal` — митигируем
-  (а) `PRAGMA wal_checkpoint(TRUNCATE)` после каждого джоба и по таймеру,
-  (б) периодический `VACUUM INTO /data/backup/autolabel-<ts>.db` (целостная
-  копия одним файлом), (в) экспортные ZIP — и есть офсайт-бэкап датасета.
-  При крахе между коммитами теряются последние секунды записи — для малой
-  нагрузки терпимо, для команды — уже нет (тогда вариант C).
-- **Конкурентность**: `@modal.concurrent` даёт параллельные запросы в одном
-  процессе; SQLite WAL спокойно держит 1–5 пользователей ревью. Горизонтального
-  масштабирования нет by design (`max_containers=1`) — это осознанный потолок.
-- **Цена/мес при малой нагрузке** (scale-to-zero, ~60 ч активности/мес,
-  0.5 ядра, 1 GiB): CPU 216 000 с × 0.5 × $0.0000131 ≈ $1.4 + RAM ≈ $0.5 ≈
-  **$2/мес**; с `min_containers=1` (0.125 ядра, ~0.75 GiB круглосуточно) ≈
-  $4.2 + $4.3 ≈ **$8.6/мес**. Volume — в пределах включённой квоты. Всё
-  покрывается $30 бесплатных кредитов → **фактически $0**. GPU — отдельно,
-  по факту разметки ($0.59–0.80/ч T4/L4).
-- **Сложность**: средняя — 6 правок + 1 новый файл, ~2–4 дня с e2e-проверкой.
-
----
-
-## 4. Вариант B — «всё в одном контейнере»: supervisor(postgres+minio+redis+api+worker) + Volume
-
-### Архитектура
-
-Один образ с supervisord/s6: postgres, redis, minio, uvicorn, arq-worker;
-`PGDATA`, данные MinIO и дампы — на Volume; наружу — `@modal.web_server` на порт
-API. Обязательно `max_containers=1` и фактически `min_containers=1`.
-
-### Изменения кода
-
-Почти нулевые: те же env-переменные, что в compose (`database_url` на
-localhost и т.д.). Работа уходит в образ: установка postgres/minio/redis,
-supervisor-конфиг, скрипт первичной инициализации, healthcheck-и, порядок
-старта. Плюс раздача `web/dist` (как в A, п. StaticFiles).
-
-### Честно про Postgres на Modal Volumes
-
-Это самое слабое место варианта:
-
-- Postgres постоянно перезаписывает множество файлов (heap, WAL, pg_control).
-  Фоновый коммит Volume снимает состояние «каждые несколько секунд» **без
-  атомарности между файлами** — восстановленный после краха `PGDATA` может быть
-  рассинхронизован (WAL от одного момента, heap от другого). Это классический
-  сценарий «looks fine until it doesn't»: Postgres может подняться и молча
-  потерять/побить данные, а может не подняться вовсе.
-- Документация Modal прямо не запрещает СУБД, но её модель («avoid concurrent
-  modifications of the same files», нет file locking, last-write-wins)
-  ориентирована на write-once артефакты (веса моделей, датасеты), не на
-  data-каталог СУБД.
-- Scale-to-zero недопустим (остановка = финальный снапшот горячего PGDATA),
-  значит контейнер 24/7 и вся экономика serverless теряется.
-- Митигация только одна — относиться к PGDATA как к кешу: `pg_dump` каждые
-  N минут на Volume/в S3 и готовность восстанавливаться из дампа. Тогда зачем
-  вообще живой Postgres?
-
-### Свойства
-
-- **Cold start**: не применим (24/7); рестарт — 10–30 с (recovery Postgres).
-- **Персистентность**: формально есть, фактически — риск коррапта PGDATA при
-  любом недобровольном рестарте; надёжна только связка «PGDATA-как-кеш + частый
-  pg_dump».
-- **Конкурентность**: внутри контейнера — полноценный Postgres, но предел один
-  контейнер.
-- **Цена/мес**: 24/7, 1 ядро + 2 GiB: $34 + $11.5 ≈ **$45/мес** (0.5 ядра +
-  1.5 GiB ≈ $26/мес) — дороже VPS с теми же гарантиями.
-- **Сложность**: по коду низкая, по образу/эксплуатации — высокая; постоянный
-  операционный риск.
-
-**Вердикт**: анти-паттерн для Modal. Полезен разве что как throwaway-демо.
+- **Cold start**: ~1 s of container plus 2–4 s of FastAPI/SQLAlchemy imports; with a
+  memory snapshot, noticeably less. If wanted, `min_containers=1` removes cold start
+  entirely (see the price). After 20 min of silence the first request waits a few
+  seconds — acceptable for a labeling tool.
+- **Persistence**: SQLite and the files survive restarts through Volume commits.
+  The risk: a background commit is not atomic across `*.db` and `*-wal` — mitigated by
+  (a) `PRAGMA wal_checkpoint(TRUNCATE)` after every job and on a timer,
+  (b) a periodic `VACUUM INTO /data/backup/autolabel-<ts>.db` (a consistent copy in a
+  single file), (c) the export ZIPs — which also give an offsite backup of the dataset.
+  A crash between commits loses the last few seconds of writes — tolerable at low load,
+  no longer so for a team (then it is option C).
+- **Concurrency**: `@modal.concurrent` gives parallel requests inside one process;
+  SQLite in WAL mode comfortably handles 1–5 reviewers. There is no horizontal scaling
+  by design (`max_containers=1`) — a deliberate ceiling.
+- **Cost/month at low load** (scale-to-zero, ~60 h of activity/month, 0.5 cores,
+  1 GiB): CPU 216,000 s × 0.5 × $0.0000131 ≈ $1.4 + RAM ≈ $0.5 ≈ **$2/month**; with
+  `min_containers=1` (0.125 cores, ~0.75 GiB around the clock) ≈ $4.2 + $4.3 ≈
+  **$8.6/month**. The Volume stays inside the included quota. All of it is covered by
+  the $30 of free credits → **effectively $0**. GPU is separate, billed by actual
+  labeling ($0.59–0.80/h for T4/L4).
+- **Complexity**: medium — 6 edits plus 1 new file, ~2–4 days including an e2e check.
 
 ---
 
-## 5. Вариант C — гибрид: ядро на Modal, состояние во внешних managed-сервисах
+## 4. Option B — "everything in one container": supervisor(postgres+minio+redis+api+worker) + Volume
 
-### Архитектура
+### Architecture
 
-- API+worker — как в A (тот же `platform.py`, но `max_containers` можно > 1).
-- **Postgres — Neon** (serverless, free tier: 0.5 GB, 100 CU-часов/мес,
-  autosuspend через 5 мин, авто-resume ~сотни мс). `postgresql+asyncpg://…` —
-  **текущий код работает без изменений**, JSONB/UUID остаются родными.
-- **Файлы — Cloudflare R2** (S3-совместимый, free tier 10 GB, **нулевой
-  egress**) или любой S3. `storage.py` работает как есть: меняются только
-  `s3_endpoint_url`/ключи; presigned URL на R2 поддерживаются.
-- **Очередь — Modal spawn** (как в A; Redis не нужен вовсе) — либо Upstash
-  Redis + текущий arq, но это лишний сервис и постоянный поллинг воркера.
+A single image with supervisord/s6: postgres, redis, minio, uvicorn, the arq worker;
+`PGDATA`, the MinIO data and the dumps live on the Volume; outward-facing is a
+`@modal.web_server` on the API port. `max_containers=1` is mandatory and
+`min_containers=1` is effectively mandatory too.
 
-### Изменения кода
+### Code changes
 
-Если сделан вариант A — **ноль**: C это конфигурация A
+Near zero: the same env variables as in compose (`database_url` on localhost and so
+on). The work moves into the image: installing postgres/minio/redis, the supervisor
+config, a first-run initialization script, healthchecks, startup ordering. Plus serving
+`web/dist` (as in A, the StaticFiles item).
+
+### An honest word about Postgres on Modal Volumes
+
+This is the weakest spot of the option:
+
+- Postgres constantly rewrites a great many files (heap, WAL, pg_control). The Volume's
+  background commit captures state "every few seconds" **without atomicity across
+  files** — a `PGDATA` restored after a crash may be out of sync (WAL from one moment,
+  heap from another). This is the classic "looks fine until it doesn't" scenario:
+  Postgres may come up and silently lose or corrupt data, or it may not come up at all.
+- Modal's documentation does not outright forbid a DBMS, but its model ("avoid
+  concurrent modifications of the same files", no file locking, last-write-wins) is
+  aimed at write-once artifacts (model weights, datasets), not at a DBMS data
+  directory.
+- Scale-to-zero is not allowed (a stop means a final snapshot of a hot PGDATA), which
+  means a 24/7 container and the whole serverless economics is lost.
+- There is only one mitigation — treat PGDATA as a cache: `pg_dump` every N minutes to
+  the Volume or to S3, and be ready to restore from the dump. In which case, why keep a
+  live Postgres at all?
+
+### Properties
+
+- **Cold start**: not applicable (24/7); a restart takes 10–30 s (Postgres recovery).
+- **Persistence**: formally present, in practice a risk of PGDATA corruption on any
+  involuntary restart; only the "PGDATA-as-cache + frequent pg_dump" combination is
+  dependable.
+- **Concurrency**: a full Postgres inside the container, but the limit is still one
+  container.
+- **Cost/month**: 24/7, 1 core + 2 GiB: $34 + $11.5 ≈ **$45/month** (0.5 cores +
+  1.5 GiB ≈ $26/month) — more expensive than a VPS with the same guarantees.
+- **Complexity**: low in code, high in image work and operations; a permanent
+  operational risk.
+
+**Verdict**: an anti-pattern for Modal. Useful, if at all, as a throwaway demo.
+
+---
+
+## 5. Option C — hybrid: the core on Modal, state in external managed services
+
+### Architecture
+
+- API + worker — as in A (the same `platform.py`, but `max_containers` may be > 1).
+- **Postgres — Neon** (serverless, free tier: 0.5 GB, 100 CU-hours/month, autosuspend
+  after 5 min, auto-resume in ~hundreds of ms). `postgresql+asyncpg://…` — **the
+  current code works unchanged**, JSONB/UUID stay native.
+- **Files — Cloudflare R2** (S3-compatible, free tier 10 GB, **zero egress**) or any
+  S3. `storage.py` works as is: only `s3_endpoint_url` and the keys change; presigned
+  URLs are supported on R2.
+- **Queue — Modal spawn** (as in A; Redis is not needed at all) — or Upstash Redis plus
+  the current arq, but that is an extra service and constant polling by the worker.
+
+### Code changes
+
+If option A has been done — **zero**: C is a configuration of A
 (`database_url=neon, storage_backend=s3(r2), queue_backend=modal`).
-Без A: только queue-абстракция (п. 5 из §3) + раздача статики.
+Without A: only the queue abstraction (item 5 of §3) plus serving the static files.
 
-### Свойства
+### Properties
 
-- **Cold start**: как A (+~0.5–1 с на resume Neon после простоя).
-- **Персистентность**: лучшая из трёх — настоящий Postgres с бэкапами Neon,
-  объекты в R2 с их durability. Никаких компромиссов с Volume-семантикой.
-- **Конкурентность**: лучшая — API стателесс, можно `max_containers>1`,
-  джобы — параллельные spawn'ы, Postgres честно держит конкурентные записи.
-  Это же путь к multi-user (v0.4).
-- **Цена/мес при малой нагрузке**: compute как в A ($0–9, покрыто кредитами) +
-  Neon Free $0 + R2 Free $0 ≈ **$0/мес**; рост — плавный и предсказуемый.
-- **Минусы**: **три аккаунта вместо одного** (Modal + Neon + Cloudflare) —
-  ломает «одна команда и всё крутится»; данные разъезжаются по трём
-  провайдерам (для приватных датасетов кому-то это стоп-фактор); free tier'ы
-  меняются, появляется зависимость от чужих лимитов.
-- **Сложность**: поверх A — тривиальная (документация + пример .env).
+- **Cold start**: as in A (plus ~0.5–1 s for a Neon resume after idling).
+- **Persistence**: the best of the three — a real Postgres with Neon's backups, objects
+  in R2 with R2's durability. No compromises with Volume semantics.
+- **Concurrency**: the best — the API is stateless, `max_containers>1` is possible,
+  jobs are parallel spawns, and Postgres honestly handles concurrent writes. This is
+  also the path to multi-user (v0.4).
+- **Cost/month at low load**: compute as in A ($0–9, covered by credits) + Neon Free $0
+  + R2 Free $0 ≈ **$0/month**; growth is smooth and predictable.
+- **Downsides**: **three accounts instead of one** (Modal + Neon + Cloudflare) — which
+  breaks "one command and it all runs"; the data spreads across three providers (for
+  private datasets that is a deal-breaker for some); free tiers change, and a dependency
+  on somebody else's limits appears.
+- **Complexity**: on top of A — trivial (documentation plus an example .env).
 
 ---
 
-## 6. Сравнение
+## 6. Comparison
 
-| Критерий | A: SQLite+Volume | B: supervisor+PG | C: гибрид Neon+R2 |
+| Criterion | A: SQLite+Volume | B: supervisor+PG | C: hybrid Neon+R2 |
 |---|---|---|---|
-| «Одна команда» без прочих аккаунтов | ✅ `modal deploy` | ✅ но долго | ❌ 3 аккаунта |
-| Изменения кода | средние (портируемость) | ~нет (всё в образ) | 0 поверх A |
-| Cold start | 3–5 с (0 при min_containers) | нет (24/7) | как A + Neon resume |
-| Целостность данных | ок с чекпоинтами; риск на крахе | ⚠️ реальный риск PGDATA | ✅ лучшая |
-| Конкурентность | 1 контейнер, WAL | 1 контейнер, PG | ✅ горизонтальная |
-| Цена/мес (малая нагрузка) | ~$2–9 → $0 с кредитами | ~$26–45 | ~$0 |
-| Путь к multi-user (v0.4) | упирается в 1 контейнер | упирается | ✅ готов |
-| Сложность | средняя | образ+эксплуатация | +docs к A |
+| "One command", no other accounts | ✅ `modal deploy` | ✅ but slow | ❌ 3 accounts |
+| Code changes | medium (portability) | ~none (all in the image) | 0 on top of A |
+| Cold start | 3–5 s (0 with min_containers) | none (24/7) | as A + Neon resume |
+| Data integrity | fine with checkpoints; risk on a crash | ⚠️ real PGDATA risk | ✅ the best |
+| Concurrency | 1 container, WAL | 1 container, PG | ✅ horizontal |
+| Cost/month (low load) | ~$2–9 → $0 with credits | ~$26–45 | ~$0 |
+| Path to multi-user (v0.4) | hits the 1-container wall | hits a wall | ✅ ready |
+| Complexity | medium | image + operations | +docs on top of A |
 
 ---
 
-## 7. Рекомендация
+## 7. Recommendation
 
-**Делать вариант A как режим по умолчанию, спроектированный так, что C — это
-его конфигурация.** Вариант B отклонить.
+**Build option A as the default mode, designed so that C is a configuration of it.**
+Reject option B.
 
-Обоснование:
+The reasoning:
 
-1. Только A даёт обещанное владельцем «нет сервера — одна команда»: весь стейт
-   в Modal, никаких сторонних регистраций, $30 кредитов покрывают всё.
-2. 90% работ по A (портируемые типы, storage/queue-абстракции, статика) — это
-   не «код под Modal», а снятие жёсткой привязки ядра к compose-стеку. Это
-   прямо усиливает видение «ядро запускается на любом ПК»: side-effect'ом
-   получаем режим `docker run` одним контейнером с SQLite без compose вообще.
-3. C автоматически становится документированным upgrade-путём, когда пользователю
-   станет тесно (команда, большие датасеты, multi-user в v0.4): поменять три
-   env-переменных, перелить данные — код тот же. Не нужно выбирать между A и C
-   сейчас — A их обоих содержит.
-4. B противоречит семантике Modal Volumes (нет атомарных мульти-файловых
-   коммитов, нет локов) и экономике serverless (24/7 контейнер дороже VPS).
+1. Only A delivers what the owner promised — "no server, one command": all the state
+   lives in Modal, no third-party sign-ups, and the $30 of credits cover everything.
+2. 90% of the work for A (portable types, the storage/queue abstractions, static files)
+   is not "code for Modal" — it is removing the core's hard coupling to the compose
+   stack. That directly reinforces the "the core runs on any machine" vision: as a side
+   effect we get a single-container `docker run` mode with SQLite and no compose at all.
+3. C automatically becomes a documented upgrade path for when the user outgrows A
+   (a team, large datasets, multi-user in v0.4): change three env variables, move the
+   data over — the code is the same. There is no need to choose between A and C now —
+   A contains both.
+4. B contradicts the semantics of Modal Volumes (no atomic multi-file commits, no
+   locks) and the economics of serverless (a 24/7 container costs more than a VPS).
 
-Ограничение A принимаем осознанно: один контейнер, малые команды. Порог, после
-которого пора на C, фиксируем в доке (примерно: >3–5 активных ревьюеров или
-БД > 1–2 GB).
+A's limitation is accepted deliberately: one container, small teams. The threshold past
+which it is time to move to C is recorded in the docs (roughly: more than 3–5 active
+reviewers, or a DB larger than 1–2 GB).
 
 ---
 
-## 8. Поэтапный план внедрения (вариант A → C)
+## 8. Phased rollout plan (option A → C)
 
-**Этап 0. Портируемость ядра (не меняет поведения compose).**
+**Phase 0. Core portability (does not change compose behavior).**
 - `models.py`: `JSON().with_variant(JSONB, "postgresql")`, `sqlalchemy.Uuid`;
   `tasks.py`: `.as_string()`.
-- `storage.py` → backend-интерфейс (S3 + Local с подписанным file-роутом).
-- Новый `queue.py` (arq | modal), `main.py` — условное создание arq-pool.
+- `storage.py` → a backend interface (S3 + Local with a signed file route).
+- A new `queue.py` (arq | modal), `main.py` — conditional creation of the arq pool.
 - `config.py`: `storage_backend`, `queue_backend`, `local_storage_dir`,
-  `serve_static`; `aiosqlite` в зависимости.
-- Проверка: e2e на compose зелёный (ingest → autolabel → review → export);
-  smoke на `sqlite+aiosqlite` локально.
+  `serve_static`; `aiosqlite` added to the dependencies.
+- Check: e2e on compose is green (ingest → autolabel → review → export); a smoke test
+  on `sqlite+aiosqlite` locally.
 
-**Этап 1. `deploy/modal/platform.py`.**
-- Образ: server + sdk + `labelers/http` + `labelers/vlm` (без paddle-плагина —
-  тяжёлый CPU-инференс в лёгком ядре не нужен, есть GPU-рецепт) + `web/dist`.
-- Класс `Platform` (эскиз в §3): `max_containers=1`, `@modal.concurrent`,
+**Phase 1. `deploy/modal/platform.py`.**
+- The image: server + sdk + `labelers/http` + `labelers/vlm` (without the paddle
+  plugin — heavy CPU inference has no place in a light core, and there is a GPU recipe)
+  + `web/dist`.
+- The `Platform` class (sketched in §3): `max_containers=1`, `@modal.concurrent`,
   volume `/data`, `web()` + `run_job()`.
-- SQLite: WAL, `busy_timeout`, `wal_checkpoint(TRUNCATE)` в конце джоба.
-- Проверка: `modal deploy deploy/modal/platform.py` → полный e2e через
-  `*.modal.run`, включая autolabel через `paddleocr_modal` endpoint.
+- SQLite: WAL, `busy_timeout`, `wal_checkpoint(TRUNCATE)` at the end of a job.
+- Check: `modal deploy deploy/modal/platform.py` → a full e2e over `*.modal.run`,
+  including autolabel through the `paddleocr_modal` endpoint.
 
-**Этап 2. Прочность и UX.**
-- Доступ: `AUTH_TOKEN` в Modal Secret → Bearer-проверка middleware'ом + поле
-  токена в UI (одно на инсталляцию; browser-совместимая замена proxy-auth).
-- Бэкапы: `VACUUM INTO /data/backup/` по завершении джобов (ротация N копий);
-  README-раздел про `modal volume get` для эвакуации данных.
-- Cold start: замерить; включить memory snapshot; задокументировать
-  `min_containers=1` как платную опцию «без задержек».
-- README: раздел «Хостинг на Modal» — буквально
+**Phase 2. Robustness and UX.**
+- Access: `AUTH_TOKEN` in a Modal Secret → a Bearer check in middleware plus a token
+  field in the UI (one per installation; a browser-compatible replacement for proxy
+  auth).
+- Backups: `VACUUM INTO /data/backup/` when jobs finish (rotating N copies); a README
+  section on `modal volume get` for evacuating the data.
+- Cold start: measure it; enable memory snapshots; document `min_containers=1` as the
+  paid "no latency" option.
+- README: a "Hosting on Modal" section — literally
   `pip install modal && modal setup && modal deploy deploy/modal/platform.py`.
 
-**Этап 3. Upgrade-путь C (только конфиг + доки).**
-- Пример `.env.modal-hybrid` (Neon `database_url`, R2 endpoint/ключи,
-  `storage_backend=s3`), инструкция миграции SQLite → Postgres (alembic + скрипт
-  переноса; синергия с уже запланированным переходом на Alembic-миграции).
-- e2e на Neon free tier + R2.
+**Phase 3. The C upgrade path (config and docs only).**
+- An example `.env.modal-hybrid` (Neon `database_url`, R2 endpoint/keys,
+  `storage_backend=s3`), and instructions for migrating SQLite → Postgres (alembic plus
+  a transfer script; synergy with the already planned move to Alembic migrations).
+- e2e on the Neon free tier + R2.
 
-**Этап 4. Наблюдение и развитие.**
-- Периодически проверять каталог Auto Endpoints: появление Qwen2.5-VL/Qwen3-VL
-  → заменить `vlm.py` на managed endpoint (меньше нашего кода).
-- Прогресс джобов через `modal.Dict` (опционально).
-- Sandboxes — кандидат для изоляции сторонних labeler-плагинов (v0.3+).
+**Phase 4. Watching and evolving.**
+- Recheck the Auto Endpoints catalog periodically: once Qwen2.5-VL/Qwen3-VL appear →
+  replace `vlm.py` with a managed endpoint (less code of ours).
+- Job progress via `modal.Dict` (optional).
+- Sandboxes — a candidate for isolating third-party labeler plugins (v0.3+).
 
-Ориентировочно: этап 0 — 1–2 дня, этап 1 — 1–2 дня, этап 2 — 1 день,
-этап 3 — 0.5–1 день.
+Rough estimate: phase 0 — 1–2 days, phase 1 — 1–2 days, phase 2 — 1 day,
+phase 3 — 0.5–1 day.
 
 ---
 
-## 9. Источники
+## 9. Sources
 
-- Volumes (коммиты, конкурентность, отсутствие локов): <https://modal.com/docs/guide/volumes>
-- Цены CPU/RAM/GPU/Volume, $30 кредитов Starter: <https://modal.com/pricing>
+- Volumes (commits, concurrency, absence of locks): <https://modal.com/docs/guide/volumes>
+- CPU/RAM/GPU/Volume pricing, the $30 of Starter credits: <https://modal.com/pricing>
 - Web endpoints, `@modal.asgi_app`, `@modal.concurrent`: <https://modal.com/docs/guide/webhooks>
-- URL'ы endpoint'ов, кастомные домены (Team/Enterprise): <https://modal.com/docs/guide/webhook-urls>
+- Endpoint URLs, custom domains (Team/Enterprise): <https://modal.com/docs/guide/webhook-urls>
 - Proxy Auth Tokens: <https://modal.com/docs/guide/webhook-proxy-auth>
 - Cold start: `min_containers`, `buffer_containers`, `scaledown_window`, memory snapshots: <https://modal.com/docs/guide/cold-start>
-- Очередь джобов через `spawn`/`FunctionCall` (результаты 7 дней): <https://modal.com/docs/guide/job-queue>
-- Dict и Queue (паттерны): <https://modal.com/docs/guide/dicts-and-queues>; лимиты Queue: <https://modal.com/docs/reference/modal.Queue>
-- Sandboxes (lifecycle, 24 ч, tunnels): <https://modal.com/docs/guide/sandboxes>
-- Auto Endpoints (каталог, `modal endpoint create`, OpenAI-совместимость): <https://modal.com/docs/guide/endpoints>; анонс: <https://modal.com/blog/introducing-auto-endpoints>
-- Пример VLM (SGLang + Qwen-VL) на Modal: <https://modal.com/docs/examples/sglang_vlm>
-- Neon free tier (0.5 GB, 100 CU-ч, autosuspend 5 мин): <https://neon.com/pricing>
-- Cloudflare R2 (free tier 10 GB, нулевой egress): <https://developers.cloudflare.com/r2/pricing/>
+- A job queue via `spawn`/`FunctionCall` (results kept 7 days): <https://modal.com/docs/guide/job-queue>
+- Dict and Queue (patterns): <https://modal.com/docs/guide/dicts-and-queues>; Queue limits: <https://modal.com/docs/reference/modal.Queue>
+- Sandboxes (lifecycle, 24 h, tunnels): <https://modal.com/docs/guide/sandboxes>
+- Auto Endpoints (the catalog, `modal endpoint create`, OpenAI compatibility): <https://modal.com/docs/guide/endpoints>; the announcement: <https://modal.com/blog/introducing-auto-endpoints>
+- A VLM example (SGLang + Qwen-VL) on Modal: <https://modal.com/docs/examples/sglang_vlm>
+- Neon free tier (0.5 GB, 100 CU-h, autosuspend after 5 min): <https://neon.com/pricing>
+- Cloudflare R2 (free tier 10 GB, zero egress): <https://developers.cloudflare.com/r2/pricing/>

@@ -1,0 +1,59 @@
+# Build context for the repo root — used by server/Dockerfile (api + worker).
+#
+# The root context only needs sdk/, server/pyproject.toml, server/app/,
+# labelers/ and deploy/modal/. Everything listed here is either huge
+# (.venv, node_modules), regenerated inside the image (caches, egg-info),
+# secret (.env), or irrelevant to a build (docs, git history).
+#
+# The web image has its own context (./web) and therefore its own ignore
+# file: see web/.dockerignore. Rules here do not apply to it.
+
+# --- VCS, CI and editor state -------------------------------------------
+.git
+.gitignore
+.gitattributes
+.github
+.claude
+.idea
+.vscode
+
+# --- Python -------------------------------------------------------------
+# The image installs everything with pip; a host virtualenv or a stale
+# egg-info directory copied in would shadow those installs.
+**/.venv
+**/venv
+**/__pycache__
+**/*.py[cod]
+**/*.egg-info
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache
+**/build
+
+# --- Node / frontend ----------------------------------------------------
+# Host node_modules holds binaries built for the host platform and would
+# break an arm64 image built on amd64. The bundle is compiled in the image.
+**/node_modules
+web/dist
+web/tsconfig.tsbuildinfo
+
+# --- Secrets and runtime data -------------------------------------------
+# .env reaches the containers through compose (env_file) at run time — it
+# must never be baked into an image layer that gets pushed to a registry.
+.env
+.env.*
+!.env.example
+data
+
+# --- Docs and demo assets -----------------------------------------------
+# Nothing in docs/ is a build input; it is screenshots and the demo GIF for
+# the README, and they only grow. Excluded as a directory so a new asset does
+# not silently start riding along in every build.
+docs
+
+# --- Local notes, not published -----------------------------------------
+.local
+
+# --- OS junk ------------------------------------------------------------
+**/.DS_Store
+**/Thumbs.db

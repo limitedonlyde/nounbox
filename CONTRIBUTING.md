@@ -80,16 +80,15 @@ Cutting a release is one command:
 git tag -a v0.2.0 -m v0.2.0 && git push origin v0.2.0
 ```
 
-**Before the very first publish, replace the `OWNER` placeholder** — until you
-do, the README quickstart is a dead link and the compose file points at an image
-that does not exist:
+Publishing from a fork? The account name lives in three places — the README
+quickstart URL, `docker-compose.ghcr.yml`, and nowhere else (the workflow reads
+`github.repository_owner` on its own):
 
 ```bash
-grep -rn OWNER README.md docker-compose.ghcr.yml
-sed -i '' 's|OWNER|your-account-lowercase|g' README.md docker-compose.ghcr.yml
+grep -rn limitedonlyde README.md docker-compose.ghcr.yml
 ```
 
-GHCR rejects capitals in image names, so lowercase it even if your account has
+GHCR rejects capitals in image names, so lowercase yours even if the account has
 them.
 
 Things worth knowing before the first publish:

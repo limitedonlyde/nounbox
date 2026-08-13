@@ -1,0 +1,19 @@
+# Blank issues are off: a bug report without the image tag and the worker log
+# costs a round trip before triage can even start.
+blank_issues_enabled: false
+contact_links:
+  - name: Question, idea, or show and tell
+    url: https://github.com/limitedonlyde/AutoLabelUi/discussions
+    about: >-
+      Setup help, "is this the right tool for X", prompt wording that worked,
+      datasets you labeled with it. Anything that is not a concrete bug.
+  - name: Security vulnerability (private report)
+    url: https://github.com/limitedonlyde/AutoLabelUi/security/advisories/new
+    about: >-
+      Do not open a public issue. Note that the absence of authentication and
+      multi-user support is a documented design decision — see SECURITY.md.
+  - name: Documentation — quickstart, known limitations, roadmap
+    url: https://github.com/limitedonlyde/AutoLabelUi#readme
+    about: >-
+      The README covers the quickstart, GPU setup, and what is still rough
+      (no migrations, no multi-user).

@@ -2,9 +2,9 @@
 #
 #   docker compose -f docker-compose.ghcr.yml up -d
 #
-# BEFORE THIS WORKS: replace OWNER below with the GitHub account that publishes
-# the images (lowercase — container names have no capitals), or set
-# AUTOLABELUI_OWNER in a .env file next to this one.
+# Images are pulled from ghcr.io/limitedonlyde. Running a fork? Set
+# AUTOLABELUI_OWNER in a .env file next to this one (lowercase — container
+# image names have no capitals).
 #
 #   AUTOLABELUI_TAG pins the version (default: latest, which tracks main).
 #   Pinning a release is recommended: AUTOLABELUI_TAG=v0.2.0
@@ -58,7 +58,7 @@ services:
 
   api:
     # один и тот же образ у api и worker'а — различаются только командой
-    image: &server-image ghcr.io/${AUTOLABELUI_OWNER:-OWNER}/autolabelui-server:${AUTOLABELUI_TAG:-latest}
+    image: &server-image ghcr.io/${AUTOLABELUI_OWNER:-limitedonlyde}/autolabelui-server:${AUTOLABELUI_TAG:-latest}
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000
     # .env необязателен: без него берутся дефолты ниже и из app/config.py.
     # Он нужен, когда меняются пароли, S3_PUBLIC_ENDPOINT_URL или ключи VLM.
@@ -114,7 +114,7 @@ services:
         condition: service_healthy
 
   web:
-    image: ghcr.io/${AUTOLABELUI_OWNER:-OWNER}/autolabelui-web:${AUTOLABELUI_TAG:-latest}
+    image: ghcr.io/${AUTOLABELUI_OWNER:-limitedonlyde}/autolabelui-web:${AUTOLABELUI_TAG:-latest}
     ports:
       - "127.0.0.1:8080:80"
     depends_on:

@@ -1,0 +1,133 @@
+name: Bug report
+description: Something behaves differently from what the docs promise
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file this.
+
+        Two things first:
+
+        - **Security problems do not belong here.** Report them privately:
+          repository **Security** tab → **Report a vulnerability**
+          (details in `SECURITY.md`).
+        - **Known limitations are not bugs**: there is no authentication and no
+          multi-user support, and there are no database migrations yet, so an
+          upgrade can require `docker compose down -v`. Both are documented in
+          the README.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you got, and what you expected instead.
+      placeholder: |
+        I uploaded 40 photos, typed the class "forklift" and pressed Autolabel.
+        The job stayed in "running" forever; no boxes appeared.
+        I expected boxes on the images, or a failed job with an error.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The shortest sequence that shows the problem.
+      placeholder: |
+        1. Create a project (detection)
+        2. Add the class "..."
+        3. Upload the attached photo
+        4. Press Autolabel with engine ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: How do you run AutoLabelUi?
+      options:
+        - Prebuilt GHCR images (docker-compose.ghcr.yml)
+        - Built from source (docker compose -f docker-compose.yml up --build)
+        - Built from source, dev mode (docker compose up --build, with the override)
+        - Other — describe below
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: >-
+        Image tag for prebuilt images (`AUTOLABELUI_TAG`, or `latest`), commit
+        for a source build (`git rev-parse --short HEAD`).
+      placeholder: "v0.1.0 / latest / 18db59c"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: engine
+    attributes:
+      label: Engine
+      description: Which labeler was selected in the engine dropdown.
+      options:
+        - owlv2 (default detector)
+        - llmdet
+        - vlm (OpenAI-compatible API, Ollama, ...)
+        - modal_gpu (GPU deployed into my Modal account)
+        - http (custom HTTP labeler)
+        - consensus
+        - rapidocr (OCR)
+        - paddleocr (OCR, WITH_PADDLE=1)
+        - Not engine-related, or I do not know
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: >-
+        Output of `docker compose logs --no-color --tail=200` (add `-f
+        docker-compose.ghcr.yml` if that is how you started it). The `worker`
+        lines matter most for autolabeling problems. **Check for secrets before
+        pasting** — API keys, tokens, presigned URLs.
+      render: shell
+      placeholder: |
+        autolabelui-worker-1  | ...
+        autolabelui-api-1     | ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Host
+      options:
+        - Linux x86_64
+        - Linux arm64
+        - macOS, Apple Silicon
+        - macOS, Intel
+        - Windows (Docker Desktop / WSL2)
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: >-
+        Browser and version for UI problems, screenshots, a sample image,
+        `.env` changes you made (**without** the values of any secrets).
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and discussions for this problem
+          required: true
+        - label: I removed tokens, API keys and other secrets from the logs above
+          required: true

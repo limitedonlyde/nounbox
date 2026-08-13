@@ -1,0 +1,24 @@
+# Build context for ./web — used by web/Dockerfile.
+#
+# This file is required in addition to the one in the repo root: Docker reads
+# the ignore file at the root of the *build context*, and the web service is
+# built with `context: ./web`, so the root .dockerignore is never consulted.
+#
+# The Dockerfile does `COPY . .` after `npm ci`. Without the node_modules rule
+# below, the host's node_modules would be copied over the freshly installed
+# one — including native binaries built for the host platform, which breaks
+# the arm64 image built on an amd64 runner.
+#
+# Kept in the context (the build needs them): package.json, package-lock.json,
+# index.html, tsconfig.json, vite.config.ts, src/, nginx.conf.
+
+node_modules
+dist
+tsconfig.tsbuildinfo
+
+# Vite reads .env files at build time — keep local ones out of the image
+.env
+.env.*
+!.env.example
+
+.DS_Store
