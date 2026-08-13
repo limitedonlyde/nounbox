@@ -6,7 +6,7 @@
 #
 # Второй вариант автоматически подхватывает docker-compose.override.yml,
 # который возвращает dev-сервер Vite, --reload и live-код.
-name: autolabelui
+name: nounbox
 
 services:
   postgres:
@@ -116,7 +116,7 @@ services:
       target: prod
     # тег явный: dev- и prod-цели собираются из одного Dockerfile, и без разных
     # имён переключение режима молча переиспользовало бы чужой образ
-    image: autolabelui-web:prod
+    image: nounbox-web:prod
     ports:
       - "127.0.0.1:8080:80"
     depends_on:

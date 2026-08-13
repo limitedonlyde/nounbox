@@ -3,26 +3,26 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "autolabel-labeler-rapidocr"
+name = "nounbox-labeler-rapidocr"
 version = "0.1.0"
-description = "RapidOCR labeler for AutoLabelUi — default CPU engine (onnxruntime, per-line polygons, real confidence)"
+description = "RapidOCR labeler for Nounbox — default CPU engine (onnxruntime, per-line polygons, real confidence)"
 requires-python = ">=3.11"
 license = { text = "AGPL-3.0-only" }
 # rapidocr в метаданных жёстко требует opencv-python; в образе он ставится
 # с --no-deps плюс opencv-python-headless (см. server/Dockerfile) — иначе
 # в site-packages лежат оба варианта opencv.
 dependencies = [
-    "autolabelui-sdk",
+    "nounbox-sdk",
     "rapidocr>=3.9",
     "onnxruntime>=1.20",
     "Pillow>=10.0",
 ]
 
-[project.entry-points."autolabelui.labelers"]
-rapidocr = "autolabel_labeler_rapidocr:RapidOCRLabeler"
+[project.entry-points."nounbox.labelers"]
+rapidocr = "nounbox_labeler_rapidocr:RapidOCRLabeler"
 
 [tool.setuptools.packages.find]
-include = ["autolabel_labeler_rapidocr*"]
+include = ["nounbox_labeler_rapidocr*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

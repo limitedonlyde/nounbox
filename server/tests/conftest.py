@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 import pytest_asyncio
 
-TMP = Path(tempfile.mkdtemp(prefix="autolabelui-tests-"))
+TMP = Path(tempfile.mkdtemp(prefix="nounbox-tests-"))
 os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{TMP / 'test.db'}"
 os.environ["SETTINGS_KEY_PATH"] = str(TMP / "settings.key")
 os.environ.pop("SETTINGS_ENCRYPTION_KEY", None)

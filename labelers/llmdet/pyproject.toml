@@ -3,23 +3,23 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "autolabel-labeler-llmdet"
+name = "nounbox-labeler-llmdet"
 version = "0.1.0"
-description = "LLMDet labeler for AutoLabelUi — open-vocabulary box detection on CPU (MM-Grounding-DINO, Apache-2.0), the accuracy mode next to OWLv2"
+description = "LLMDet labeler for Nounbox — open-vocabulary box detection on CPU (MM-Grounding-DINO, Apache-2.0), the accuracy mode next to OWLv2"
 requires-python = ">=3.11"
 license = { text = "AGPL-3.0-only" }
 dependencies = [
-    "autolabelui-sdk",
+    "nounbox-sdk",
     "transformers>=4.57",
     "torch>=2.2",
     "Pillow>=10.0",
 ]
 
-[project.entry-points."autolabelui.labelers"]
-llmdet = "autolabel_labeler_llmdet:LLMDetLabeler"
+[project.entry-points."nounbox.labelers"]
+llmdet = "nounbox_labeler_llmdet:LLMDetLabeler"
 
 [tool.setuptools.packages.find]
-include = ["autolabel_labeler_llmdet*"]
+include = ["nounbox_labeler_llmdet*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -9,7 +9,7 @@ function App() {
     <BrowserRouter>
       <header className="topbar">
         <Link to="/" className="logo">
-          AutoLabelUi
+          Nounbox
         </Link>
         <span className="muted">auto-labeling for datasets: detection and OCR</span>
         <Link to="/settings" className="topbar-link">

@@ -16,9 +16,9 @@ import io
 import pytest
 from PIL import Image, ImageDraw
 
-from autolabel_labeler_llmdet import LLMDetLabeler
-from autolabel_labeler_llmdet import labeler as mod
-from autolabelui_sdk import BBox
+from nounbox_labeler_llmdet import LLMDetLabeler
+from nounbox_labeler_llmdet import labeler as mod
+from nounbox_sdk import BBox
 
 pytestmark = pytest.mark.slow
 

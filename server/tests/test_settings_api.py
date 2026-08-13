@@ -93,7 +93,7 @@ async def test_put_same_token_keeps_ready_gpu(client, session_factory, token_pai
     async with session_factory() as session:
         row = (await session.execute(select(InstanceSettings))).scalar_one()
         row.gpu_status = GpuStatus.READY
-        row.gpu_endpoint_url = "https://ws--autolabelui-gpu-fastapi-app.modal.run"
+        row.gpu_endpoint_url = "https://ws--nounbox-gpu-fastapi-app.modal.run"
         await session.commit()
 
     same = await client.put(

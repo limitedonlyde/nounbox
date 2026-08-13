@@ -3,17 +3,17 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "autolabel-labeler-consensus"
+name = "nounbox-labeler-consensus"
 version = "0.1.0"
-description = "Consensus meta-labeler for AutoLabelUi — real confidence from cross-engine agreement (IoU matching + text similarity)"
+description = "Consensus meta-labeler for Nounbox — real confidence from cross-engine agreement (IoU matching + text similarity)"
 requires-python = ">=3.11"
 license = { text = "AGPL-3.0-only" }
 dependencies = [
-    "autolabelui-sdk",
+    "nounbox-sdk",
 ]
 
-[project.entry-points."autolabelui.labelers"]
-consensus = "autolabel_labeler_consensus:ConsensusLabeler"
+[project.entry-points."nounbox.labelers"]
+consensus = "nounbox_labeler_consensus:ConsensusLabeler"
 
 [tool.setuptools.packages.find]
-include = ["autolabel_labeler_consensus*"]
+include = ["nounbox_labeler_consensus*"]

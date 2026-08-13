@@ -1,10 +1,10 @@
-# autolabelui-sdk
+# nounbox-sdk
 
-The labeler plugin contract for AutoLabelUi. Implement the `Labeler` protocol and
+The labeler plugin contract for Nounbox. Implement the `Labeler` protocol and
 register it through entry points — the platform picks the engine up automatically.
 
 ```python
-from autolabelui_sdk import Annotation, BBox, Capability
+from nounbox_sdk import Annotation, BBox, Capability
 
 class MyLabeler:
     name = "my-ocr"
@@ -17,6 +17,6 @@ class MyLabeler:
 
 ```toml
 # pyproject.toml of your plugin
-[project.entry-points."autolabelui.labelers"]
+[project.entry-points."nounbox.labelers"]
 my_ocr = "my_package:MyLabeler"
 ```

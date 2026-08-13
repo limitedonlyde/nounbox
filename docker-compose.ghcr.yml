@@ -1,13 +1,13 @@
-# AutoLabelUi — run from prebuilt images, nothing is compiled locally.
+# Nounbox — run from prebuilt images, nothing is compiled locally.
 #
 #   docker compose -f docker-compose.ghcr.yml up -d
 #
 # Images are pulled from ghcr.io/limitedonlyde. Running a fork? Set
-# AUTOLABELUI_OWNER in a .env file next to this one (lowercase — container
+# NOUNBOX_OWNER in a .env file next to this one (lowercase — container
 # image names have no capitals).
 #
-#   AUTOLABELUI_TAG pins the version (default: latest, which tracks main).
-#   Pinning a release is recommended: AUTOLABELUI_TAG=v0.2.0
+#   NOUNBOX_TAG pins the version (default: latest, which tracks main).
+#   Pinning a release is recommended: NOUNBOX_TAG=v0.2.0
 #
 # NOTE: there are no database migrations yet — see the upgrade warning in the
 # README before moving between versions.
@@ -58,7 +58,7 @@ services:
 
   api:
     # один и тот же образ у api и worker'а — различаются только командой
-    image: &server-image ghcr.io/${AUTOLABELUI_OWNER:-limitedonlyde}/autolabelui-server:${AUTOLABELUI_TAG:-latest}
+    image: &server-image ghcr.io/${NOUNBOX_OWNER:-limitedonlyde}/nounbox-server:${NOUNBOX_TAG:-latest}
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000
     # .env необязателен: без него берутся дефолты ниже и из app/config.py.
     # Он нужен, когда меняются пароли, S3_PUBLIC_ENDPOINT_URL или ключи VLM.
@@ -114,7 +114,7 @@ services:
         condition: service_healthy
 
   web:
-    image: ghcr.io/${AUTOLABELUI_OWNER:-limitedonlyde}/autolabelui-web:${AUTOLABELUI_TAG:-latest}
+    image: ghcr.io/${NOUNBOX_OWNER:-limitedonlyde}/nounbox-web:${NOUNBOX_TAG:-latest}
     ports:
       - "127.0.0.1:8080:80"
     depends_on:

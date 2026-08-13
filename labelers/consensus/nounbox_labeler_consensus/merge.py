@@ -40,7 +40,7 @@ import difflib
 from dataclasses import replace
 from typing import Any
 
-from autolabelui_sdk import Annotation, BBox
+from nounbox_sdk import Annotation, BBox
 
 DEFAULT_IOU_THRESHOLD = 0.4
 

@@ -270,7 +270,7 @@ def _data_yaml(classes: Sequence[str]) -> str:
     """data.yaml для ultralytics. json.dumps даёт корректно экранированный
     YAML-скаляр в кавычках, так что pyyaml в зависимостях не нужен."""
     lines = [
-        "# AutoLabelUi export",
+        "# Nounbox export",
         # ключ path намеренно не пишем: без него ultralytics берёт за корень
         # датасета папку самого data.yaml, а `path: .` он разрешает в текущую
         # рабочую директорию (data/utils.py: path.exists() → путь берётся как есть)
@@ -334,7 +334,7 @@ def _build_coco(
     cat_id = {c["name"]: c["id"] for c in categories}
 
     coco: dict[str, Any] = {
-        "info": {"description": "AutoLabelUi export", "version": "0.1.0"},
+        "info": {"description": "Nounbox export", "version": "0.1.0"},
         "images": [],
         "annotations": [],
         "categories": categories,
@@ -440,7 +440,7 @@ def build_zip(
                 f"Nothing to export in format {fmt}: review some images first"
             )
         manifest = {
-            "generator": "autolabelui",
+            "generator": "nounbox",
             "generator_version": "0.1.0",
             "format": fmt,
             "task_type": task_type,

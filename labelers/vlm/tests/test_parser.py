@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from autolabel_labeler_vlm import VlmLabeler
+from nounbox_labeler_vlm import VlmLabeler
 
 WIDTH, HEIGHT = 1000, 800
 CONF = 0.5

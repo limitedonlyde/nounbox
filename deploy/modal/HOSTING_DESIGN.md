@@ -21,7 +21,7 @@ The flow: on the settings page the user pastes a Modal API token
 (`ak-…` / `as-…`, what `modal token new` hands out; `PUT /api/v1/settings`) and presses
 "Connect GPU" (`POST /api/v1/settings/gpu/deploy` → a Job of type `DEPLOY_GPU`).
 The platform imports `deploy/modal/paddleocr_modal.py`, takes the module-level `app`
-object and calls `modal.runner.deploy_app(app, name="autolabelui-paddleocr",
+object and calls `modal.runner.deploy_app(app, name="nounbox-paddleocr",
 client=modal.Client.from_credentials(...))`; the URL is fetched separately with
 `modal.Function.from_name(app, "fastapi_app", client=…).hydrate(client=…).get_web_url()`
 (it is not part of `DeployResult`) and stored in `settings.gpu_endpoint_url`. From
@@ -34,7 +34,7 @@ What follows from this for the recipe (and is already done):
 - the file is self-contained: `include_source=True` mounts EXACTLY this one `.py`
   into the Modal container, so any `from ...` reaching into the monorepo will not
   resolve there;
-- access token: if the deploying process has `AUTOLABELUI_GPU_TOKEN` set, it is baked
+- access token: if the deploying process has `NOUNBOX_GPU_TOKEN` set, it is baked
   into the app's Secret (`Secret.from_dict`, read at import time — meaning the variable
   must be set BEFORE the module is imported) and `/predict` starts requiring
   `Authorization: Bearer <token>`; with no variable set, the endpoint stays open behind
@@ -46,7 +46,7 @@ What follows from this for the recipe (and is already done):
 The post-deploy check: `GET /health` returns `{"auth": "bearer"|"open",
 "engines_loaded": N}` — this is how the platform confirms that the container came up
 on a GPU and that the token made it through. The first `POST /predict` additionally
-pays for downloading the PP-OCRv5 weights (cached in the `autolabelui-paddlex-cache`
+pays for downloading the PP-OCRv5 weights (cached in the `nounbox-paddlex-cache`
 Volume), so it is better to "warm" the endpoint with a tiny PNG than with the user's
 first real page.
 
@@ -133,11 +133,11 @@ no arq ties beyond the `(ctx, job_id)` signature: portable as they are.
 
 ### Architecture
 
-One Modal App `autolabelui-platform`, one service class, **one container**:
+One Modal App `nounbox-platform`, one service class, **one container**:
 
 ```python
 # deploy/modal/platform.py (sketch)
-data_vol = modal.Volume.from_name("autolabelui-data", create_if_missing=True)
+data_vol = modal.Volume.from_name("nounbox-data", create_if_missing=True)
 
 @app.cls(
     image=image,                      # server + sdk + labelers/http,vlm + web/dist
@@ -186,7 +186,7 @@ class Platform:
    HMAC-signed route `GET /api/v1/files/{key}?exp=&sig=`). One new route.
 5. A new `server/app/queue.py` — `async def enqueue(request, task, job_id)`: an arq
    implementation (the current behavior) and a modal one
-   (`modal.Cls.from_name("autolabelui-platform", "Platform")().run_job.spawn(...)`).
+   (`modal.Cls.from_name("nounbox-platform", "Platform")().run_job.spawn(...)`).
    `main.py` creates the arq pool only when `queue_backend=arq`.
 6. `server/app/db.py` — for SQLite: `PRAGMA journal_mode=WAL`, `busy_timeout`,
    NullPool; `pyproject.toml` + `aiosqlite`.

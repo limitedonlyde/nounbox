@@ -3,13 +3,13 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "autolabel-labeler-owlv2"
+name = "nounbox-labeler-owlv2"
 version = "0.1.0"
-description = "OWLv2 labeler for AutoLabelUi — open-vocabulary box detection on CPU (Apache-2.0 weights), the default detection engine"
+description = "OWLv2 labeler for Nounbox — open-vocabulary box detection on CPU (Apache-2.0 weights), the default detection engine"
 requires-python = ">=3.11"
 license = { text = "AGPL-3.0-only" }
 dependencies = [
-    "autolabelui-sdk",
+    "nounbox-sdk",
     "transformers>=4.57",
     "torch>=2.2",
     "Pillow>=10.0",
@@ -19,11 +19,11 @@ dependencies = [
     "scipy>=1.11",
 ]
 
-[project.entry-points."autolabelui.labelers"]
-owlv2 = "autolabel_labeler_owlv2:Owlv2Labeler"
+[project.entry-points."nounbox.labelers"]
+owlv2 = "nounbox_labeler_owlv2:Owlv2Labeler"
 
 [tool.setuptools.packages.find]
-include = ["autolabel_labeler_owlv2*"]
+include = ["nounbox_labeler_owlv2*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

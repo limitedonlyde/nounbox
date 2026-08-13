@@ -29,7 +29,7 @@ import threading
 
 from PIL import Image
 
-from autolabelui_sdk import Annotation, Capability
+from nounbox_sdk import Annotation, Capability
 
 DEFAULT_BASE_URL = "http://host.docker.internal:11434/v1"
 DEFAULT_MODEL = "qwen2.5vl:7b"

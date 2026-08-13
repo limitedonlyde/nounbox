@@ -28,7 +28,7 @@ async def ready_gpu(session_factory, token: str = "ak-1234567890abcdef") -> None
             modal_token_id=token,
             modal_token_secret_encrypted="encrypted",
             gpu_status=GpuStatus.READY,
-            gpu_endpoint_url="https://ws--autolabelui-gpu-fastapi-app.modal.run",
+            gpu_endpoint_url="https://ws--nounbox-gpu-fastapi-app.modal.run",
         )
         session.add(row)
         await session.commit()

@@ -4,8 +4,8 @@ import difflib
 
 import pytest
 
-from autolabelui_sdk import Annotation, BBox
-from autolabel_labeler_consensus.merge import iou, merge, text_similarity, to_bbox
+from nounbox_sdk import Annotation, BBox
+from nounbox_labeler_consensus.merge import iou, merge, text_similarity, to_bbox
 
 
 def ann(x, y, w, h, text=None):

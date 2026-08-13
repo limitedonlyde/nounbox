@@ -25,7 +25,7 @@ from __future__ import annotations
 import os
 import threading
 
-from autolabelui_sdk import Annotation, BBox, Capability
+from nounbox_sdk import Annotation, BBox, Capability
 
 DEFAULT_MODEL = "google/owlv2-base-patch16-ensemble"
 DEFAULT_SCORE_THRESHOLD = 0.25

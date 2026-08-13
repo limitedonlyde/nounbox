@@ -26,7 +26,7 @@ from typing import Any
 
 import httpx
 
-from autolabelui_sdk import Annotation, BBox, Capability
+from nounbox_sdk import Annotation, BBox, Capability
 
 DEFAULT_ENDPOINT = os.environ.get("LABELER_HTTP_ENDPOINT", "")
 

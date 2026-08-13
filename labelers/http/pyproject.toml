@@ -3,19 +3,19 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "autolabel-labeler-http"
+name = "nounbox-labeler-http"
 version = "0.1.0"
-description = "Generic HTTP labeler for AutoLabelUi — any engine behind a tiny HTTP convention (Modal, RunPod, custom)"
+description = "Generic HTTP labeler for Nounbox — any engine behind a tiny HTTP convention (Modal, RunPod, custom)"
 requires-python = ">=3.11"
 license = { text = "AGPL-3.0-only" }
 dependencies = [
-    "autolabelui-sdk",
+    "nounbox-sdk",
     "httpx>=0.27",
 ]
 
-[project.entry-points."autolabelui.labelers"]
-http = "autolabel_labeler_http:HttpLabeler"
-modal_gpu = "autolabel_labeler_http:ModalGpuLabeler"
+[project.entry-points."nounbox.labelers"]
+http = "nounbox_labeler_http:HttpLabeler"
+modal_gpu = "nounbox_labeler_http:ModalGpuLabeler"
 
 [tool.setuptools.packages.find]
-include = ["autolabel_labeler_http*"]
+include = ["nounbox_labeler_http*"]

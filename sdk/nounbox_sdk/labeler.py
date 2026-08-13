@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from autolabelui_sdk.types import Annotation, Capability
+from nounbox_sdk.types import Annotation, Capability
 
-ENTRYPOINT_GROUP = "autolabelui.labelers"
+ENTRYPOINT_GROUP = "nounbox.labelers"
 
 
 @runtime_checkable

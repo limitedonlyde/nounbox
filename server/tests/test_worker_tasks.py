@@ -2,9 +2,9 @@
 
 import uuid
 
-import autolabelui_sdk
+import nounbox_sdk
 import pytest
-from autolabelui_sdk import Annotation as SdkAnnotation
+from nounbox_sdk import Annotation as SdkAnnotation
 from sqlalchemy import select
 
 from app import storage
@@ -24,7 +24,7 @@ from app.models import (
 from app.services import modal_deploy
 from app.workers import tasks
 
-ENDPOINT = "https://ws--autolabelui-gpu-fastapi-app.modal.run"
+ENDPOINT = "https://ws--nounbox-gpu-fastapi-app.modal.run"
 PREDICT = f"{ENDPOINT}/predict"
 
 
@@ -49,7 +49,7 @@ class RecordingLabeler:
 
 def install(monkeypatch, *labelers: RecordingLabeler) -> None:
     monkeypatch.setattr(
-        autolabelui_sdk, "load_labelers", lambda: {la.name: la for la in labelers}
+        nounbox_sdk, "load_labelers", lambda: {la.name: la for la in labelers}
     )
 
 
@@ -182,14 +182,14 @@ async def test_deploy_gpu_saves_endpoint_and_takes_token_from_settings(
 
     monkeypatch.setattr(modal_deploy, "deploy_gpu_app", fake_deploy)
     async with session_factory() as session:
-        job = Job(type=JobType.DEPLOY_GPU, payload={"app_name": "autolabelui-gpu"})
+        job = Job(type=JobType.DEPLOY_GPU, payload={"app_name": "nounbox-gpu"})
         session.add(job)
         await session.commit()
         job_id = str(job.id)
 
     await tasks.run_deploy_gpu({}, job_id)
 
-    assert calls == [("ak-1234567890abcdef", "as-secret", "autolabelui-gpu")]
+    assert calls == [("ak-1234567890abcdef", "as-secret", "nounbox-gpu")]
     async with session_factory() as session:
         job = await session.get(Job, uuid.UUID(job_id))
         row = (await session.execute(select(InstanceSettings))).scalar_one()
@@ -296,7 +296,7 @@ def test_recipe_is_self_contained():
 
     assert "modal.App(" in source
     assert "from app" not in source
-    assert "from autolabelui" not in source
+    assert "from nounbox" not in source
 
 
 def test_recipe_path_override(monkeypatch, tmp_path):

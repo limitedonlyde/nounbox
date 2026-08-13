@@ -32,7 +32,7 @@ services:
   web:
     build:
       target: dev
-    image: autolabelui-web:dev
+    image: nounbox-web:dev
     environment:
       API_PROXY_TARGET: http://api:8000
     # !override, а не слияние: иначе к 5173 добавился бы порт 8080 из базового

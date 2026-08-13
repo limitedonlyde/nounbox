@@ -24,10 +24,10 @@ logger = logging.getLogger(__name__)
 # случайно примонтированный ~/.modal.toml (два активных профиля) сломал бы деплой
 os.environ.setdefault("MODAL_CONFIG_PATH", "/nonexistent/modal.toml")
 
-RECIPE_MODULE_NAME = "autolabelui_gpu_recipe"
+RECIPE_MODULE_NAME = "nounbox_gpu_recipe"
 APP_NAME_RE = re.compile(r"^[a-zA-Z0-9._-]{1,64}$")
 # имя переменной, из которой рецепт забирает Bearer-токен эндпоинта
-GPU_TOKEN_ENV = "AUTOLABELUI_GPU_TOKEN"
+GPU_TOKEN_ENV = "NOUNBOX_GPU_TOKEN"
 
 TOKEN_ID_PREFIX = "ak-"
 TOKEN_SECRET_PREFIX = "as-"

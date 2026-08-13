@@ -172,7 +172,7 @@ def resolve_labeler_config(
         raise LabelerNotReadyError(f"Engine {MODAL_GPU} is not ready: {blocker}")
     # в настройках лежит корень приложения Modal, рецепт слушает POST /predict
     resolved.setdefault("endpoint", predict_url(row.gpu_endpoint_url))
-    gpu_token = app_config.autolabelui_gpu_token
+    gpu_token = app_config.nounbox_gpu_token
     if not gpu_token and row.gpu_access_token_encrypted:
         from app.crypto import decrypt_secret
 

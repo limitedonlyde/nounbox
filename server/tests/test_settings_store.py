@@ -5,7 +5,7 @@ import pytest
 from app.models import GpuStatus, InstanceSettings
 from app.services import settings_store
 
-ENDPOINT = "https://ws--autolabelui-gpu-fastapi-app.modal.run"
+ENDPOINT = "https://ws--nounbox-gpu-fastapi-app.modal.run"
 # рецепт слушает POST /predict — резолвер дописывает путь сам
 PREDICT = f"{ENDPOINT}/predict"
 
@@ -37,7 +37,7 @@ def test_modal_gpu_gets_endpoint_from_settings():
 
 
 def test_gpu_token_is_injected_as_api_key(monkeypatch):
-    monkeypatch.setattr(settings_store.app_config, "autolabelui_gpu_token", "s3cret")
+    monkeypatch.setattr(settings_store.app_config, "nounbox_gpu_token", "s3cret")
 
     resolved = settings_store.resolve_labeler_config("modal_gpu", {}, row(GpuStatus.READY))
 

@@ -1,13 +1,13 @@
-"""AutoLabelUi SDK — контракт labeler-плагинов.
+"""Nounbox SDK — контракт labeler-плагинов.
 
 Плагин — это класс, реализующий протокол Labeler. Публикация через entry points:
 
-    [project.entry-points."autolabelui.labelers"]
+    [project.entry-points."nounbox.labelers"]
     paddleocr = "my_plugin:PaddleOCRLabeler"
 """
 
-from autolabelui_sdk.labeler import Labeler, load_labelers
-from autolabelui_sdk.types import Annotation, BBox, Capability, Polygon
+from nounbox_sdk.labeler import Labeler, load_labelers
+from nounbox_sdk.types import Annotation, BBox, Capability, Polygon
 
 __all__ = [
     "Annotation",

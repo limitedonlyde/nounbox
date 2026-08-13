@@ -10,7 +10,7 @@ import io
 import pytest
 from PIL import Image, ImageDraw, ImageFont
 
-from autolabel_labeler_rapidocr import RapidOCRLabeler
+from nounbox_labeler_rapidocr import RapidOCRLabeler
 
 pytestmark = pytest.mark.slow
 

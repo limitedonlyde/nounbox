@@ -3,9 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "autolabelui-server"
+name = "nounbox-server"
 version = "0.1.0"
-description = "AutoLabelUi backend — OCR dataset autolabeling platform"
+description = "Nounbox backend — self-hosted auto-labeling for object detection"
 requires-python = ">=3.11"
 license = { text = "AGPL-3.0-only" }
 dependencies = [

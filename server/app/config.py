@@ -26,11 +26,11 @@ class Settings(BaseSettings):
     # Режим «сложно»: платформа сама разворачивает GPU-рецепт в аккаунт Modal
     # пользователя. Путь к рецепту по умолчанию — рядом с кодом сервера.
     # пустое имя -> деплой под именем приложения из самого рецепта
-    modal_gpu_app_name: str = "autolabelui-gpu"
+    modal_gpu_app_name: str = "nounbox-gpu"
     modal_gpu_recipe_path: str = ""
     # если задан, рецепт закрывает /predict заголовком Bearer, а worker
     # подставляет тот же токен в конфиг движка modal_gpu
-    autolabelui_gpu_token: str = ""
+    nounbox_gpu_token: str = ""
     # Общий токен доступа к ручкам настроек (токен Modal, деплой GPU).
     # Пусто — ручки открыты, платформа предупреждает об этом.
     app_access_token: str = ""

@@ -5,12 +5,12 @@
 параметры vLLM, свой прогрев.
 
 Деплой:  modal deploy deploy/modal/vlm.py
-После деплоя endpoint вида https://<workspace>--autolabelui-vlm-serve.modal.run
+После деплоя endpoint вида https://<workspace>--nounbox-vlm-serve.modal.run
 подставляется в VLM-labeler как base_url (+ "/v1"), model = MODEL ниже.
 
 Деньги: gpu="L4", scale-to-zero (scaledown_window) — платим только за разметку.
 Первый запуск: сборка образа + скачивание модели (~15GB) — минуты; дальше
-модель кешируется в Volume. Остановить: modal app stop autolabelui-vlm
+модель кешируется в Volume. Остановить: modal app stop nounbox-vlm
 
 Производственное замечание: endpoint публичный по неугадываемому URL.
 Для защиты добавьте проверку Authorization в обёртку или modal ProxyAuth.
@@ -21,9 +21,9 @@ import modal
 MODEL = "Qwen/Qwen2.5-VL-7B-Instruct"
 GPU = "L4"  # 24GB — достаточно для 7B bf16 + KV-cache
 
-app = modal.App("autolabelui-vlm")
+app = modal.App("nounbox-vlm")
 
-hf_cache = modal.Volume.from_name("autolabelui-hf-cache", create_if_missing=True)
+hf_cache = modal.Volume.from_name("nounbox-hf-cache", create_if_missing=True)
 
 image = modal.Image.debian_slim(python_version="3.11").pip_install(
     "vllm>=0.10",

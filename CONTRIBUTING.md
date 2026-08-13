@@ -1,4 +1,4 @@
-# Contributing to AutoLabelUi
+# Contributing to Nounbox
 
 ## Dev setup
 
@@ -7,7 +7,7 @@ cp .env.example .env
 docker compose up -d --build   # dev: Vite HMR + uvicorn --reload
 ```
 
-(Users who only want to *run* AutoLabelUi do not build anything — they pull
+(Users who only want to *run* Nounbox do not build anything — they pull
 published images with `docker-compose.ghcr.yml`. See the README quickstart.)
 
 `docker-compose.yml` holds the release configuration (static bundle behind
@@ -38,14 +38,14 @@ The test suite is still being established (pytest for `server/` and
 ## Adding a labeler plugin
 
 1. Create `labelers/<name>/` with a `pyproject.toml` depending on
-   `autolabelui-sdk` and a package implementing the `Labeler` protocol —
+   `nounbox-sdk` and a package implementing the `Labeler` protocol —
    attributes `name`, `version`, `capabilities` and a method
    `predict(image: bytes, config: dict) -> list[Annotation]`
    (see `sdk/README.md` for a minimal example).
 2. Register it via the entry point group:
 
    ```toml
-   [project.entry-points."autolabelui.labelers"]
+   [project.entry-points."nounbox.labelers"]
    my_ocr = "my_package:MyLabeler"
    ```
 
@@ -66,8 +66,8 @@ add a Modal recipe under `deploy/modal/` if you want a one-command deploy.
 
 | Image | Contents | Built from |
 |---|---|---|
-| `autolabelui-server` | `api` and `worker` — same image, different commands | `server/Dockerfile`, context = repo root |
-| `autolabelui-web` | static bundle behind nginx | `web/Dockerfile`, target `prod` |
+| `nounbox-server` | `api` and `worker` — same image, different commands | `server/Dockerfile`, context = repo root |
+| `nounbox-web` | static bundle behind nginx | `web/Dockerfile`, target `prod` |
 
 Both are multi-arch (`linux/amd64`, `linux/arm64`). Tags:
 

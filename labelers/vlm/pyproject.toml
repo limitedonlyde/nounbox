@@ -3,19 +3,19 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "autolabel-labeler-vlm"
+name = "nounbox-labeler-vlm"
 version = "0.1.0"
-description = "VLM labeler plugin for AutoLabelUi (any OpenAI-compatible endpoint: Ollama, vLLM, cloud)"
+description = "VLM labeler plugin for Nounbox (any OpenAI-compatible endpoint: Ollama, vLLM, cloud)"
 requires-python = ">=3.11"
 license = { text = "AGPL-3.0-only" }
 dependencies = [
-    "autolabelui-sdk",
+    "nounbox-sdk",
     "openai>=1.40",
     "Pillow>=10.0",
 ]
 
-[project.entry-points."autolabelui.labelers"]
-vlm = "autolabel_labeler_vlm:VlmLabeler"
+[project.entry-points."nounbox.labelers"]
+vlm = "nounbox_labeler_vlm:VlmLabeler"
 
 [tool.setuptools.packages.find]
-include = ["autolabel_labeler_vlm*"]
+include = ["nounbox_labeler_vlm*"]

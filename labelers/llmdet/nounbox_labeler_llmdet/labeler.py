@@ -65,7 +65,7 @@ from pathlib import Path
 
 from PIL import Image as PILImage
 
-from autolabelui_sdk import Annotation, BBox, Capability
+from nounbox_sdk import Annotation, BBox, Capability
 
 logger = logging.getLogger(__name__)
 

@@ -1,6 +1,6 @@
 # Roadmap
 
-AutoLabelUi is self-hosted auto-labeling for object detection: name your classes
+Nounbox is self-hosted auto-labeling for object detection: name your classes
 in plain English, drop in photos, get boxes from an open-vocabulary model, fix
 what is wrong, export YOLO or COCO. Everything runs on your machine.
 

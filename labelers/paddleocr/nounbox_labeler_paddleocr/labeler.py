@@ -18,7 +18,7 @@ from importlib.metadata import version as pkg_version
 import numpy as np
 from PIL import Image
 
-from autolabelui_sdk import Annotation, Capability
+from nounbox_sdk import Annotation, Capability
 
 logger = logging.getLogger(__name__)
 

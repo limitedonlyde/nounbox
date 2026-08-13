@@ -2,9 +2,9 @@
 
 import uuid
 
-import autolabelui_sdk
-from autolabelui_sdk import Annotation as SdkAnnotation
-from autolabelui_sdk import BBox
+import nounbox_sdk
+from nounbox_sdk import Annotation as SdkAnnotation
+from nounbox_sdk import BBox
 from sqlalchemy import select
 
 from app import storage
@@ -45,7 +45,7 @@ class RecordingDetector:
 
 def install(monkeypatch, labeler) -> None:
     monkeypatch.setattr(
-        autolabelui_sdk, "load_labelers", lambda: {labeler.name: labeler}
+        nounbox_sdk, "load_labelers", lambda: {labeler.name: labeler}
     )
     monkeypatch.setattr(storage, "get_bytes", lambda key: b"png-bytes")
 

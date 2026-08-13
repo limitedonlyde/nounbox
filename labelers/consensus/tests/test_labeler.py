@@ -2,7 +2,7 @@
 
 import pytest
 
-from autolabel_labeler_consensus import ConsensusLabeler
+from nounbox_labeler_consensus import ConsensusLabeler
 
 
 def test_unknown_engine_error_lists_available():
@@ -20,7 +20,7 @@ def test_cannot_nest_itself():
         ConsensusLabeler().predict(b"", {"engines": [{"name": "consensus"}]})
 
 
-from autolabelui_sdk import Annotation, BBox
+from nounbox_sdk import Annotation, BBox
 
 
 class _Stub:
@@ -37,7 +37,7 @@ class _Stub:
 
 
 def test_predict_dispatch_primary_and_per_engine_config(monkeypatch):
-    import autolabel_labeler_consensus.labeler as mod
+    import nounbox_labeler_consensus.labeler as mod
 
     first = _Stub(
         "eng_a",
@@ -62,7 +62,7 @@ def test_predict_dispatch_primary_and_per_engine_config(monkeypatch):
 
 
 def test_predict_duplicate_engine_runs_twice(monkeypatch):
-    import autolabel_labeler_consensus.labeler as mod
+    import nounbox_labeler_consensus.labeler as mod
 
     stub = _Stub("eng_a", [])
     monkeypatch.setattr(mod, "load_labelers", lambda: {"eng_a": stub})

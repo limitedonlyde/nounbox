@@ -1,15 +1,15 @@
-# AutoLabelUi
+# Nounbox
 
 **Name your classes in plain English. Get boxes. Fix what is wrong. Export.**
 
 Self-hosted auto-labeling for object detection. No accounts, no API keys, no
 GPU, and nothing leaves your machine.
 
-[![tests](https://github.com/limitedonlyde/AutoLabelUi/actions/workflows/test.yml/badge.svg)](https://github.com/limitedonlyde/AutoLabelUi/actions/workflows/test.yml)
+[![tests](https://github.com/limitedonlyde/nounbox/actions/workflows/test.yml/badge.svg)](https://github.com/limitedonlyde/nounbox/actions/workflows/test.yml)
 [![license: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
-[![images: GHCR](https://img.shields.io/badge/images-ghcr.io-2496ed?logo=docker&logoColor=white)](https://github.com/limitedonlyde/AutoLabelUi/pkgs/container/autolabelui-server)
+[![images: GHCR](https://img.shields.io/badge/images-ghcr.io-2496ed?logo=docker&logoColor=white)](https://github.com/limitedonlyde/nounbox/pkgs/container/nounbox-server)
 
-![AutoLabelUi in action](docs/demo.gif)
+![Nounbox in action](docs/demo.gif)
 
 *Five class names, four photos, fourteen boxes — then a human fixes the one that
 is off and exports YOLO.*
@@ -22,7 +22,7 @@ is off and exports YOLO.*
 ## Quickstart
 
 ```bash
-curl -fsSLO https://raw.githubusercontent.com/limitedonlyde/AutoLabelUi/main/docker-compose.ghcr.yml
+curl -fsSLO https://raw.githubusercontent.com/limitedonlyde/nounbox/main/docker-compose.ghcr.yml
 docker compose -f docker-compose.ghcr.yml up -d
 ```
 
@@ -35,8 +35,8 @@ detector weights (~620 MB) download once on the first autolabel run and are
 cached in a volume.
 
 > Running your own fork? Point the images at your account with
-> `AUTOLABELUI_OWNER=your-account` in a `.env` beside the compose file.
-> `AUTOLABELUI_TAG=v0.2.0` pins a release; the default, `latest`, tracks `main`.
+> `NOUNBOX_OWNER=your-account` in a `.env` beside the compose file.
+> `NOUNBOX_TAG=v0.2.0` pins a release; the default, `latest`, tracks `main`.
 
 Everything else is optional. Defaults are the development credentials from
 [`.env.example`](.env.example); to change them — or the S3 endpoint, or the VLM
@@ -46,13 +46,13 @@ keys — drop a `.env` next to the compose file.
 > created on first start and new columns do not appear on an existing database.
 > A version bump can therefore require `docker compose down -v`, which deletes
 > your annotations. **Export your dataset before upgrading**, and pin a tag
-> (`AUTOLABELUI_TAG=v0.2.0`) so a `pull` cannot move you unexpectedly. Migrations
+> (`NOUNBOX_TAG=v0.2.0`) so a `pull` cannot move you unexpectedly. Migrations
 > are the next infrastructure item on the [roadmap](ROADMAP.md).
 
 ### Build from source instead
 
 ```bash
-git clone https://github.com/limitedonlyde/AutoLabelUi && cd AutoLabelUi
+git clone https://github.com/limitedonlyde/nounbox && cd nounbox
 cp .env.example .env
 docker compose -f docker-compose.yml up -d --build
 ```
@@ -190,7 +190,7 @@ labelers/             engine plugins
 deploy/modal/         serverless GPU recipes
 ```
 
-`api` and `worker` are the same image (`autolabelui-server`) started with
+`api` and `worker` are the same image (`nounbox-server`) started with
 different commands — one serves HTTP, the other drains the arq queue — so they
 can never drift apart on a shared database.
 

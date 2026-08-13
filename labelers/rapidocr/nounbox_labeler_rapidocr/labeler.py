@@ -41,7 +41,7 @@ from pathlib import Path
 
 from PIL import Image as PILImage
 
-from autolabelui_sdk import Annotation, Capability, Polygon
+from nounbox_sdk import Annotation, Capability, Polygon
 
 logger = logging.getLogger(__name__)
 

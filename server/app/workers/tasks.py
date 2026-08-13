@@ -63,10 +63,10 @@ REVIEWED_DUPLICATE_IOU = 0.7
 async def run_autolabel(ctx: dict, job_id: str) -> None:
     """Прогнать labeler'ы по всем изображениям проекта и записать аннотации.
 
-    Движки подхватываются из entry points (autolabelui_sdk.load_labelers).
+    Движки подхватываются из entry points (nounbox_sdk.load_labelers).
     Если ни одного не установлено — задача завершается с пояснением в result.
     """
-    from autolabelui_sdk import load_labelers
+    from nounbox_sdk import load_labelers
 
     async with SessionLocal() as session:
         job = await session.get(Job, uuid.UUID(job_id))
@@ -94,7 +94,7 @@ async def run_autolabel(ctx: dict, job_id: str) -> None:
                 labelers = {wanted: labelers[wanted]}
             if not labelers:
                 raise RuntimeError(
-                    "No labelers installed (entry points group 'autolabelui.labelers')"
+                    "No labelers installed (entry points group 'nounbox.labelers')"
                 )
 
             # конфиг движка дополняется настройками (для modal_gpu — endpoint GPU),
@@ -428,14 +428,14 @@ async def run_deploy_gpu(ctx: dict, job_id: str) -> None:
             token_secret = decrypt_secret(row.modal_token_secret_encrypted)
             # эндпоинт закрываем Bearer-токеном: URL угадать трудно, но он
             # утекает в историю браузера, логи прокси и скриншоты
-            gpu_token = settings.autolabelui_gpu_token or secrets_mod.token_urlsafe(32)
+            gpu_token = settings.nounbox_gpu_token or secrets_mod.token_urlsafe(32)
             deployed = await modal_deploy.deploy_gpu_app(
                 row.modal_token_id,
                 token_secret,
                 app_name=job.payload.get("app_name") or None,
                 gpu_token=gpu_token,
             )
-            if not settings.autolabelui_gpu_token:
+            if not settings.nounbox_gpu_token:
                 row.gpu_access_token_encrypted = encrypt_secret(gpu_token)
 
             row.gpu_status = GpuStatus.READY

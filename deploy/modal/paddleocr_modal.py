@@ -25,24 +25,24 @@ ocr_version задаётся явно: без него paddleocr 3.7 уводи�
 из монорепо здесь быть не должно.
 
 Токен доступа (опционально): если у процесса, который деплоит, задана переменная
-AUTOLABELUI_GPU_TOKEN, она запекается в Secret приложения и /predict начинает
+NOUNBOX_GPU_TOKEN, она запекается в Secret приложения и /predict начинает
 требовать `Authorization: Bearer <token>` (в HTTP-labeler это config.api_key).
 Переменной нет — эндпоинт открыт по неугадываемому URL, как раньше.
 
-Деплой:  AUTOLABELUI_GPU_TOKEN=... modal deploy deploy/modal/paddleocr_modal.py
-Endpoint: https://<workspace>--autolabelui-paddleocr-fastapi-app.modal.run/predict
+Деплой:  NOUNBOX_GPU_TOKEN=... modal deploy deploy/modal/paddleocr_modal.py
+Endpoint: https://<workspace>--nounbox-paddleocr-fastapi-app.modal.run/predict
 — подставляется в HTTP-labeler как config.endpoint.
 
-Остановить: modal app stop autolabelui-paddleocr
+Остановить: modal app stop nounbox-paddleocr
 """
 
 import os
 
 import modal
 
-APP_NAME = "autolabelui-paddleocr"
+APP_NAME = "nounbox-paddleocr"
 GPU = "T4"
-TOKEN_ENV = "AUTOLABELUI_GPU_TOKEN"
+TOKEN_ENV = "NOUNBOX_GPU_TOKEN"
 
 DEFAULT_LANG = "ru"
 DEFAULT_OCR_VERSION = "PP-OCRv5"
@@ -61,7 +61,7 @@ PREDICT_PARAMS = (
 
 app = modal.App(APP_NAME)
 
-model_cache = modal.Volume.from_name("autolabelui-paddlex-cache", create_if_missing=True)
+model_cache = modal.Volume.from_name("nounbox-paddlex-cache", create_if_missing=True)
 
 # токен читается у процесса-деплойщика; нет переменной -> ключ в Secret не попадает
 auth_secret = modal.Secret.from_dict({TOKEN_ENV: os.environ.get(TOKEN_ENV) or None})

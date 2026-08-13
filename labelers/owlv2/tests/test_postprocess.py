@@ -2,7 +2,7 @@
 
 import pytest
 
-from autolabel_labeler_owlv2.labeler import (
+from nounbox_labeler_owlv2.labeler import (
     MIN_SIDE_PX,
     iou,
     nms_per_class,

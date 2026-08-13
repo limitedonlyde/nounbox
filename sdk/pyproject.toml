@@ -3,12 +3,12 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "autolabelui-sdk"
+name = "nounbox-sdk"
 version = "0.1.0"
-description = "Plugin contract for AutoLabelUi labelers (OCR autolabeling platform)"
+description = "Plugin contract for Nounbox labelers (open-vocabulary object detection)"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "AGPL-3.0-only" }
 
 [tool.setuptools.packages.find]
-include = ["autolabelui_sdk*"]
+include = ["nounbox_sdk*"]

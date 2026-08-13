@@ -13,9 +13,9 @@ Config:
 
 from __future__ import annotations
 
-from autolabelui_sdk import Annotation, Capability, load_labelers
+from nounbox_sdk import Annotation, Capability, load_labelers
 
-from autolabel_labeler_consensus.merge import DEFAULT_IOU_THRESHOLD, merge
+from nounbox_labeler_consensus.merge import DEFAULT_IOU_THRESHOLD, merge
 
 DEFAULT_ENGINES = [{"name": "paddleocr"}, {"name": "vlm"}]
 

@@ -5,10 +5,10 @@ import io
 import pytest
 from PIL import Image
 
-from autolabel_labeler_llmdet import LLMDetLabeler
-from autolabel_labeler_llmdet import labeler as mod
-from autolabel_labeler_llmdet.labeler import Detection
-from autolabelui_sdk import BBox, Labeler
+from nounbox_labeler_llmdet import LLMDetLabeler
+from nounbox_labeler_llmdet import labeler as mod
+from nounbox_labeler_llmdet.labeler import Detection
+from nounbox_sdk import BBox, Labeler
 
 # реальный выход BertTokenizerFast модели на промпт "carpet. sofa. chandelier."
 # ['[CLS]', 'carpet', '.', 'sofa', '.', 'chan', '##del', '##ier', '.', '[SEP]']

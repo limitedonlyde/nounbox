@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-AutoLabelUi is pre-1.0 and moves fast. Fixes land on `main` and go out in the
+Nounbox is pre-1.0 and moves fast. Fixes land on `main` and go out in the
 next image build; there are no backports to older tags.
 
 | Version | Supported |
@@ -12,7 +12,7 @@ next image build; there are no backports to older tags.
 
 ## Threat model — read this before reporting
 
-**AutoLabelUi is a single-user tool for localhost or a network you trust.** It
+**Nounbox is a single-user tool for localhost or a network you trust.** It
 has no accounts, no login, no roles, and no per-project permissions. That is a
 deliberate design decision, documented in the [roadmap](ROADMAP.md), not an
 oversight.
@@ -60,7 +60,7 @@ What follows from it:
 
 Report it privately through GitHub Security Advisories: go to the repository's
 **Security** tab and press **Report a vulnerability**
-([direct link](https://github.com/limitedonlyde/AutoLabelUi/security/advisories/new)).
+([direct link](https://github.com/limitedonlyde/nounbox/security/advisories/new)).
 That opens a private thread visible only to you and the maintainer.
 
 Helpful to include:

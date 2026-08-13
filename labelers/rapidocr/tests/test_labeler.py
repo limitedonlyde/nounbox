@@ -5,9 +5,9 @@ import io
 import pytest
 from PIL import Image
 
-from autolabel_labeler_rapidocr import RapidOCRLabeler
-from autolabel_labeler_rapidocr import labeler as mod
-from autolabelui_sdk import Labeler
+from nounbox_labeler_rapidocr import RapidOCRLabeler
+from nounbox_labeler_rapidocr import labeler as mod
+from nounbox_sdk import Labeler
 
 # то, что реально приходит из RapidOCROutput: TL, TR, BR, BL
 BOX_A = [[86.0, 101.0], [776.0, 102.0], [776.0, 135.0], [86.0, 134.0]]

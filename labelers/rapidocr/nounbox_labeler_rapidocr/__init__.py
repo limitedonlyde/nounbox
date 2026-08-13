@@ -1,0 +1,3 @@
+from nounbox_labeler_rapidocr.labeler import RapidOCRLabeler
+
+__all__ = ["RapidOCRLabeler"]

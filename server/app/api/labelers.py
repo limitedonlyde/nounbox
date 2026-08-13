@@ -1,6 +1,6 @@
 """Список движков для UI: установленные плагины + доступность из настроек."""
 
-from autolabelui_sdk import load_labelers
+from nounbox_sdk import load_labelers
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
