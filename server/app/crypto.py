@@ -55,14 +55,16 @@ def load_key() -> bytes:
                 logger.warning("Fixed permissions of %s (were %o)", path, mode)
             key = path.read_bytes().strip()
             if not key:
-                raise SecretKeyError(f"Файл ключа {path} пуст — удалите его и перезапустите")
+                raise SecretKeyError(
+                    f"Key file {path} is empty — delete it and restart"
+                )
             return key
         return _generate_key_file(path)
     except OSError as exc:
         raise SecretKeyError(
-            f"Не удалось прочитать/создать ключ шифрования {path}: {exc}. "
-            "Задайте SETTINGS_KEY_PATH на доступный для записи путь "
-            "или SETTINGS_ENCRYPTION_KEY (ключ Fernet)."
+            f"Could not read or create the encryption key {path}: {exc}. "
+            "Point SETTINGS_KEY_PATH at a writable path, "
+            "or set SETTINGS_ENCRYPTION_KEY (a Fernet key)."
         ) from exc
 
 
@@ -72,7 +74,7 @@ def _fernet() -> Fernet:
         return Fernet(load_key())
     except (ValueError, TypeError) as exc:
         raise SecretKeyError(
-            "Ключ шифрования настроек некорректен (ожидается base64-ключ Fernet)"
+            "The settings encryption key is invalid (a base64 Fernet key is expected)"
         ) from exc
 
 
@@ -89,8 +91,8 @@ def decrypt_secret(token: str) -> str:
         return _fernet().decrypt(token.encode()).decode()
     except InvalidToken as exc:
         raise SecretDecryptError(
-            "Сохранённый секрет не расшифровывается — ключ шифрования изменился. "
-            "Введите токен Modal заново."
+            "The stored secret cannot be decrypted — the encryption key has changed. "
+            "Enter the Modal token again."
         ) from exc
 
 

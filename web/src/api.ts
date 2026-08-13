@@ -88,8 +88,8 @@ export const labelerSupportsTask = (labeler: Labeler, task: TaskType): boolean =
   !labeler.tasks || labeler.tasks.includes(task);
 
 export const TASK_TITLES: Record<TaskType, string> = {
-  detection: "Детекция объектов",
-  ocr: "OCR (текст)",
+  detection: "Object detection",
+  ocr: "OCR (text)",
 };
 
 /** Дефолтный движок по типу задачи: owlv2 выбран по замеру (F1 0.823 на 79 фото). */

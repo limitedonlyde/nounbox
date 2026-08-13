@@ -2,10 +2,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, Settings } from "../api";
 
 const STATUS_TEXT: Record<Settings["gpu_status"], string> = {
-  not_configured: "GPU-движок не подключён",
-  deploying: "Разворачивается в вашем аккаунте Modal...",
-  ready: "GPU-движок готов",
-  failed: "Деплой не удался",
+  not_configured: "GPU engine not connected",
+  deploying: "Deploying to your Modal account...",
+  ready: "GPU engine ready",
+  failed: "Deploy failed",
 };
 
 function GpuStatusBlock({ settings }: { settings: Settings }) {
@@ -18,8 +18,9 @@ function GpuStatusBlock({ settings }: { settings: Settings }) {
       </div>
       {status === "deploying" && (
         <p className="muted">
-          Первый деплой собирает образ с моделями — это может занять несколько
-          минут. Страницу можно закрыть, процесс продолжится на сервере.
+          The first deploy builds an image with the models — this can take a few
+          minutes. You can close the page, the process keeps running on the
+          server.
         </p>
       )}
       {status === "ready" && settings.gpu_endpoint_url && (
@@ -29,7 +30,8 @@ function GpuStatusBlock({ settings }: { settings: Settings }) {
             {settings.gpu_endpoint_url}
           </a>
           <br />
-          Движок <code>modal_gpu</code> доступен в селекторе на странице проекта.
+          The <code>modal_gpu</code> engine is now available in the engine picker
+          on the project page.
         </p>
       )}
       {status === "failed" && settings.gpu_error && (
@@ -82,7 +84,7 @@ function SettingsPage() {
           stopPoll();
           setMessage(
             s.gpu_status === "ready"
-              ? "GPU-движок развёрнут и готов к работе."
+              ? "GPU engine deployed and ready."
               : null
           );
         }
@@ -122,7 +124,7 @@ function SettingsPage() {
       setSettings(await api.saveModalToken(tokenId.trim(), tokenSecret.trim()));
       setTokenId("");
       setTokenSecret("");
-      setMessage("Токен сохранён.");
+      setMessage("Token saved.");
     } catch (err) {
       fail(err);
     } finally {
@@ -137,7 +139,7 @@ function SettingsPage() {
     stopPoll();
     try {
       setSettings(await api.deleteModalToken());
-      setMessage("Токен удалён, GPU-режим отключён.");
+      setMessage("Token removed, GPU mode is off.");
     } catch (err) {
       fail(err);
     } finally {
@@ -167,50 +169,50 @@ function SettingsPage() {
 
   return (
     <div className="settings-page">
-      <h1>Настройки</h1>
+      <h1>Settings</h1>
 
       <section className="settings-section">
-        <h2>Режим разметки</h2>
+        <h2>Labeling mode</h2>
         <p className="muted">
-          По умолчанию платформа размечает документы на CPU движком{" "}
-          <code>rapidocr</code> — он работает сразу, без аккаунтов и ключей.
-          GPU-режим — необязательное ускорение: платформа разворачивает
-          GPU-рецепт <strong>в ваш собственный аккаунт Modal</strong>, вы платите
-          Modal напрямую по своему тарифу, а платформа только запускает деплой и
-          вызывает эндпоинт. Результат в обоих режимах одинаковый по структуре —
-          построчные полигоны с текстом и confidence.
+          By default the platform labels documents on CPU with the{" "}
+          <code>rapidocr</code> engine — it works right away, no accounts and no
+          keys. GPU mode is an optional speed-up: the platform deploys the GPU
+          recipe <strong>into your own Modal account</strong>, you pay Modal
+          directly at your own rate, and the platform only starts the deploy and
+          calls the endpoint. Both modes return the same structure — per-line
+          polygons with text and confidence.
         </p>
       </section>
 
       {settings && !settings.access_protected && (
         <section className="settings-section">
           <p className="warning">
-            Эти настройки может менять любой, кто имеет доступ к порту API — в
-            том числе вписать свой токен Modal или запустить деплой за ваш счёт.
-            Если платформа доступна кому-то ещё, задайте{" "}
-            <code>APP_ACCESS_TOKEN</code> в <code>.env</code> и перезапустите
-            стек.
+            Anyone who can reach the API port can change these settings —
+            including putting in their own Modal token or starting a deploy at
+            your expense. If anyone else can reach the platform, set{" "}
+            <code>APP_ACCESS_TOKEN</code> in <code>.env</code> and restart the
+            stack.
           </p>
         </section>
       )}
 
       <section className="settings-section">
-        <h2>Токен Modal</h2>
+        <h2>Modal token</h2>
         <p className="muted">
-          Нужен API-токен: установите Modal CLI и выполните{" "}
-          <code>modal token new</code> — он выведет пару{" "}
-          <code>token_id</code> (<code>ak-...</code>) и <code>token_secret</code>{" "}
-          (<code>as-...</code>). Токены из дашборда вида <code>wk-</code>/
-          <code>ws-</code> — прокси-токены для вызовов, для деплоя они не годятся.
-          Секрет хранится в зашифрованном виде и никогда не возвращается обратно
-          в интерфейс.
+          You need an API token: install the Modal CLI and run{" "}
+          <code>modal token new</code> — it prints a pair of{" "}
+          <code>token_id</code> (<code>ak-...</code>) and <code>token_secret</code>{" "}
+          (<code>as-...</code>). Dashboard tokens that look like <code>wk-</code>/
+          <code>ws-</code> are proxy tokens for calls, they do not work for a
+          deploy. The secret is stored encrypted and never comes back to the
+          interface.
         </p>
 
         {settings?.modal_configured && (
           <p>
-            Подключён токен <code>{settings.modal_token_id_masked}</code>{" "}
+            Token <code>{settings.modal_token_id_masked}</code> is connected{" "}
             <button onClick={() => void disconnect()} disabled={busy}>
-              Отключить
+              Disconnect
             </button>
           </p>
         )}
@@ -239,32 +241,30 @@ function SettingsPage() {
             type="submit"
             disabled={busy || !tokenId.trim() || !tokenSecret.trim()}
           >
-            {settings?.modal_configured ? "Заменить токен" : "Сохранить"}
+            {settings?.modal_configured ? "Replace token" : "Save"}
           </button>
         </form>
 
         {wrongPrefix && (
           <p className="warning">
-            token id обычно начинается с <code>ak-</code>. Если у вас{" "}
-            <code>wk-</code> — это прокси-токен, для деплоя нужен вывод{" "}
+            token id usually starts with <code>ak-</code>. If yours starts with{" "}
+            <code>wk-</code>, it is a proxy token — a deploy needs the output of{" "}
             <code>modal token new</code>.
           </p>
         )}
       </section>
 
       <section className="settings-section">
-        <h2>GPU-движок</h2>
+        <h2>GPU engine</h2>
         {settings ? <GpuStatusBlock settings={settings} /> : <p className="muted">...</p>}
         <button
           onClick={() => void deploy()}
           disabled={busy || !settings?.modal_configured || deploying}
         >
-          {settings?.gpu_status === "ready"
-            ? "Развернуть заново"
-            : "Подключить GPU"}
+          {settings?.gpu_status === "ready" ? "Redeploy" : "Connect GPU"}
         </button>
         {!settings?.modal_configured && (
-          <span className="muted"> — сначала сохраните токен Modal</span>
+          <span className="muted"> — save a Modal token first</span>
         )}
       </section>
 

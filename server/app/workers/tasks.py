@@ -29,7 +29,7 @@ from app.services import settings_store
 
 logger = logging.getLogger(__name__)
 
-NO_CLASSES_ERROR = "Добавьте классы проекта перед запуском разметки"
+NO_CLASSES_ERROR = "Add project classes before starting the labeling run"
 
 
 def _as_xyxy(geometry: dict) -> tuple[float, float, float, float] | None:
@@ -423,7 +423,7 @@ async def run_deploy_gpu(ctx: dict, job_id: str) -> None:
         try:
             if not (row.modal_token_id and row.modal_token_secret_encrypted):
                 raise RuntimeError(
-                    "Токен Modal не сохранён — введите его на странице настроек"
+                    "No Modal token saved — enter it on the settings page"
                 )
             token_secret = decrypt_secret(row.modal_token_secret_encrypted)
             # эндпоинт закрываем Bearer-токеном: URL угадать трудно, но он

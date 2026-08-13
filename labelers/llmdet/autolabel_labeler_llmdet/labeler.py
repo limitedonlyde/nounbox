@@ -133,8 +133,8 @@ def resolve_classes(config: dict) -> list[str]:
     raw = config.get("classes")
     if raw is None:
         raise ValueError(
-            "llmdet: config['classes'] is required — добавьте классы проекта "
-            "перед запуском разметки"
+            "llmdet: config['classes'] is required — add the project classes "
+            "before starting a labeling run"
         )
     if isinstance(raw, str) or not isinstance(raw, Iterable):
         raise ValueError(
@@ -161,8 +161,8 @@ def resolve_classes(config: dict) -> list[str]:
 
     if not names:
         raise ValueError(
-            "llmdet: config['classes'] is empty — добавьте классы проекта "
-            "перед запуском разметки"
+            "llmdet: config['classes'] is empty — add the project classes "
+            "before starting a labeling run"
         )
     check_class_limit(names)
     return names
@@ -172,8 +172,8 @@ def check_class_limit(classes: Sequence[str]) -> None:
     """Лимит промпта — ДО загрузки модели: иначе будет невнятный RuntimeError."""
     if len(classes) > MAX_CLASSES:
         raise ValueError(
-            f"llmdet: LLMDet принимает не более {MAX_CLASSES} класса за раз, "
-            f"у проекта {len(classes)} — используйте owlv2"
+            f"llmdet: LLMDet takes at most {MAX_CLASSES} classes per request, "
+            f"and this project has {len(classes)} — use owlv2 instead"
         )
 
 
@@ -181,9 +181,9 @@ def check_prompt_tokens(n_tokens: int, max_text_len: int, n_classes: int) -> Non
     """Второй рубеж: длинные многословные имена выбирают лимит раньше 91 класса."""
     if n_tokens > max_text_len:
         raise ValueError(
-            f"llmdet: промпт из {n_classes} классов занимает {n_tokens} токенов "
-            f"при лимите модели {max_text_len} — сократите имена классов "
-            "или используйте owlv2"
+            f"llmdet: a prompt with {n_classes} classes takes {n_tokens} tokens, "
+            f"and the model limit is {max_text_len} — shorten the class names "
+            "or use owlv2 instead"
         )
 
 

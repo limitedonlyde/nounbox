@@ -130,7 +130,7 @@ async def test_detection_without_classes_fails_with_hint(
     job = await run_job(session_factory, project_id)
 
     assert job.status == JobStatus.FAILED
-    assert job.result["error"] == "Добавьте классы проекта перед запуском разметки"
+    assert job.result["error"] == "Add project classes before starting the labeling run"
     assert labeler.configs == []  # движок даже не вызывался
     async with session_factory() as session:
         assert (await session.execute(select(Annotation))).first() is None

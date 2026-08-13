@@ -20,15 +20,15 @@ from app.models import (
 # поэтому оно английское: кириллица/иероглифы дадут молча пустую разметку.
 CLASS_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9 '\-_/().]*$")
 CLASS_NAME_HINT = (
-    "Имя класса задаётся английскими словами: латинские буквы, цифры, "
-    "пробел, дефис (например «coffee table»)"
+    "A class name is written in English words: Latin letters, digits, "
+    "spaces and hyphens (for example “coffee table”)"
 )
 
 
 def normalize_class_name(value: str) -> str:
     name = " ".join(value.split())
     if not name:
-        raise ValueError("Имя класса не может быть пустым")
+        raise ValueError("A class name cannot be empty")
     if not CLASS_NAME_RE.match(name):
         raise ValueError(CLASS_NAME_HINT)
     return name

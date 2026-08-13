@@ -37,9 +37,9 @@ def require_access(request: Request) -> None:
         if not _warned:
             _warned = True
             logger.warning(
-                "APP_ACCESS_TOKEN не задан: ручки настроек (токен Modal, деплой GPU) "
-                "открыты всем, кто имеет доступ к порту API. Задайте переменную, "
-                "если платформа доступна кому-то ещё."
+                "APP_ACCESS_TOKEN is not set: the settings endpoints (Modal token, "
+                "GPU deploy) are open to anyone who can reach the API port. Set the "
+                "variable if anyone else can reach this platform."
             )
         return
 
@@ -49,6 +49,7 @@ def require_access(request: Request) -> None:
     ):
         raise HTTPException(
             401,
-            "Требуется токен доступа: заголовок Authorization: Bearer <APP_ACCESS_TOKEN>",
+            "Access token required: send the header "
+            "Authorization: Bearer <APP_ACCESS_TOKEN>",
             headers={"WWW-Authenticate": "Bearer"},
         )

@@ -48,37 +48,37 @@ BOTH = ("detection", "ocr")
 # только подходящие. Неизвестный сторонний плагин не прячем (BOTH).
 CATALOG: dict[str, dict] = {
     RAPIDOCR: {
-        "title": "RapidOCR — CPU, работает сразу",
+        "title": "RapidOCR — CPU, works out of the box",
         "requires": "cpu",
         "tasks": OCR,
     },
     MODAL_GPU: {
-        "title": "GPU в вашем аккаунте Modal",
+        "title": "GPU in your own Modal account",
         "requires": "modal",
         "tasks": OCR,
     },
     OWLV2: {
-        "title": "OWLv2 — боксы по вашим классам, CPU",
+        "title": "OWLv2 — boxes for your classes, CPU",
         "requires": "cpu",
         "tasks": DETECTION,
     },
     LLMDET: {
-        "title": "LLMDet — боксы по вашим классам, CPU",
+        "title": "LLMDet — boxes for your classes, CPU",
         "requires": "cpu",
         "tasks": DETECTION,
     },
     "consensus": {
-        "title": "Консенсус нескольких движков",
+        "title": "Consensus of several engines",
         "requires": "config",
         "tasks": BOTH,
     },
     "vlm": {
-        "title": "VLM — OpenAI-совместимый endpoint",
+        "title": "VLM — OpenAI-compatible endpoint",
         "requires": "config",
         "tasks": OCR,
     },
-    "http": {"title": "Внешний HTTP-эндпоинт", "requires": "config", "tasks": BOTH},
-    "paddleocr": {"title": "PaddleOCR — локальный CPU", "requires": "cpu", "tasks": OCR},
+    "http": {"title": "External HTTP endpoint", "requires": "config", "tasks": BOTH},
+    "paddleocr": {"title": "PaddleOCR — local CPU", "requires": "cpu", "tasks": OCR},
 }
 
 ORDER = (
@@ -152,12 +152,12 @@ def gpu_blocker(row: InstanceSettings | None) -> str | None:
     if gpu_ready(row):
         return None
     if row is None or not row.modal_token_secret_encrypted:
-        return "Нужен токен Modal"
+        return "A Modal token is required"
     if row.gpu_status == GpuStatus.DEPLOYING:
-        return "GPU разворачивается — подождите"
+        return "The GPU is deploying — please wait"
     if row.gpu_status == GpuStatus.FAILED:
-        return "Развернуть GPU не удалось — см. страницу настроек"
-    return "Нажмите «Подключить GPU» на странице настроек"
+        return "The GPU deploy failed — see the settings page"
+    return "Click “Connect GPU” on the settings page"
 
 
 def resolve_labeler_config(
@@ -169,7 +169,7 @@ def resolve_labeler_config(
         return resolved
     blocker = gpu_blocker(row)
     if blocker is not None:
-        raise LabelerNotReadyError(f"Движок {MODAL_GPU} не готов: {blocker}")
+        raise LabelerNotReadyError(f"Engine {MODAL_GPU} is not ready: {blocker}")
     # в настройках лежит корень приложения Modal, рецепт слушает POST /predict
     resolved.setdefault("endpoint", predict_url(row.gpu_endpoint_url))
     gpu_token = app_config.autolabelui_gpu_token
@@ -195,7 +195,7 @@ def build_labelers(
         meta = CATALOG.get(name, {})
         available, reason = True, None
         if name not in installed:
-            available, reason = False, "Движок не установлен в этом образе"
+            available, reason = False, "Engine is not installed in this image"
         elif name == MODAL_GPU:
             reason = gpu_blocker(row)
             available = reason is None

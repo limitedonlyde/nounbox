@@ -1,173 +1,167 @@
 # AutoLabelUi
 
-**Label Studio, tuned for OCR, with autolabel-first UX.**
+**Name your classes in plain English. Get boxes. Fix what is wrong. Export.**
 
-Self-hosted platform for building OCR training datasets: drop in files in any
-format, get automatic pre-labeling from pluggable engines, review it fast with
-a keyboard-driven UI, export in training-ready formats.
+Self-hosted auto-labeling for object detection. No accounts, no API keys, no
+GPU, and nothing leaves your machine.
 
-> **Status: v0.2 — early stage.** The core loop (ingest → autolabel → review →
-> export) works end-to-end, but APIs and the DB schema are still moving,
-> there is no auth yet (single-user), and migrations/tests are being
-> established. Expect rough edges.
-
-## Key features
-
-- **Ingest anything** — PNG/JPEG/WebP, multi-page TIFF/GIF, HEIC, PDF, ZIP
-  archives. Everything is normalized to PNG, deduplicated (SHA-256), and
-  blur-scored on the way in.
-- **Pre-labeling in one click** — RapidOCR on CPU out of the box, or your own
-  GPU on Modal for the hard pages; also any VLM behind an OpenAI-compatible
-  API and a generic HTTP labeler for arbitrary backends. Every annotation
-  carries provenance: engine name/version, confidence, review status.
-- **Review UI built for speed** — lowest-confidence-first queue, bulk accept
-  by confidence threshold, polygon overlay, hotkeys for everything
-  (↑↓ select, ←→ pages, A accept, R reject, E edit text, D draw box).
-- **Export** — `paddleocr_det`, `paddleocr_rec`, `coco`. Only reviewed
-  (accepted/edited) annotations are exported, and every ZIP includes a
-  snapshot manifest for dataset versioning.
-- **Plugin SDK** — a labeler is one method: `predict(image, config) ->
-  list[Annotation]`. Register a Python entry point and the platform picks it
-  up.
-
-## Quick start
-
-Requires Docker with the compose plugin.
+![AutoLabelUi in action](docs/demo.gif)
 
 ```bash
+git clone https://github.com/USER/AutoLabelUi && cd AutoLabelUi
 cp .env.example .env
 docker compose -f docker-compose.yml up -d --build
 ```
 
-Open http://localhost:8080, create a project, upload files, hit **Autolabel**,
-review, export. That is the release configuration: the frontend is a static
-bundle served by nginx, which also proxies `/api` to the backend — no dev
-server, no source mounts.
+Open http://localhost:8080, create a project, type the classes you care about,
+drop in photos, press **Autolabel**.
 
-For development, drop the `-f` flag. Compose then also picks up
-`docker-compose.override.yml`, which swaps in the Vite dev server with HMR,
-`uvicorn --reload` and live-mounted source:
+> **Status: early.** The core loop works end to end and is covered by tests, but
+> the API and the database schema still move between releases, there is no
+> multi-user support, and migrations are not in place yet. Expect rough edges,
+> and pin a commit if you depend on it.
 
-```bash
-docker compose up -d --build
-```
+## Why this exists
 
-- Dev UI: http://localhost:5173 · API docs: http://localhost:8000/docs
-- MinIO console (dev only): http://localhost:9001
+Every annotation tool assumes you already have a model. This one assumes you do
+not: you describe what you are looking for in words, and an open-vocabulary
+detector draws the first pass. Your job shrinks from *drawing* thousands of
+boxes to *checking* them.
 
-Both modes bind their ports to `127.0.0.1`. Put a TLS-terminating reverse
-proxy in front before exposing anything, and set `S3_PUBLIC_ENDPOINT_URL` to
-an address the browser can reach — image previews are presigned URLs opened
-directly against MinIO, so they cannot be proxied under a path prefix (the
-SigV4 signature covers host and path).
+The classes are arbitrary. `microwave oven`, `slow cooker`, `fire hydrant`,
+`forklift` — nothing is trained in advance, nothing is fine-tuned, and the model
+has no fixed list of categories.
 
-## Two ways to label
+## How it works
 
-AutoLabelUi ships with two modes, and you pick per project — no config files
-either way.
+**Ingest** — PNG, JPEG, WebP, multi-page TIFF and GIF, HEIC, PDF, ZIP archives.
+Everything is normalized, deduplicated by content hash, and blur-scored.
 
-### Simple (default): CPU, works out of the box
+**Label** — [OWLv2](https://huggingface.co/google/owlv2-base-patch16-ensemble)
+(Apache-2.0) runs on the CPU and returns one box per object with a real
+confidence score. About 2 seconds per photo on a laptop; the weights (~620 MB)
+download once.
 
-`docker compose up -d` and hit **Autolabel**. The default engine is **RapidOCR**
-(PP-OCRv5 detection + recognition on onnxruntime): line-level 4-point polygons,
-real per-line confidence, Russian and Latin scripts, ~1 s per A4 page on a
-laptop CPU. No accounts, no API keys, no GPU. Model weights (~13 MB) download
-once into a Docker volume and it runs fully offline afterwards.
+**Review** — the queue puts the least confident boxes first, because that is
+where your attention is worth the most. Drag the handles to fix a box, press a
+digit to change its class, `A` to accept, `D` to draw a missing one. Accept
+everything above a threshold in one click.
 
-### Advanced: your own GPU on Modal
+**Export** — YOLO (`data.yaml` plus normalized labels, with a deterministic
+train/val split) or COCO instances. Only annotations a human has reviewed are
+exported.
 
-For skewed scans, photos, dense layouts or large batches, open **Settings**,
-paste a Modal API token (`modal token new`) and press **Connect GPU**. The
-platform deploys [`deploy/modal/paddleocr_modal.py`](deploy/modal/paddleocr_modal.py)
-into *your* Modal account, secures the endpoint with a generated bearer token,
-and the **GPU** engine appears in the engine list. You pay Modal directly for
-the GPU seconds you use; it scales to zero when idle.
+## Optional: your own GPU
 
-Both modes produce the **same kind of output** — line-level polygons plus text —
-so switching does not change the shape of your dataset.
+For large batches, open **Settings**, paste a Modal API token and press
+**Connect GPU**. The platform deploys the recipe into *your* Modal account,
+secures the endpoint with a generated bearer token, and a GPU engine appears in
+the engine list. You pay Modal directly for the seconds you use, and it scales
+to zero when idle. This is entirely optional — the CPU path is the default and
+needs no account at all.
 
-### Other engines
+## Choosing an engine
 
-- **VLM** — any OpenAI-compatible vision endpoint (Modal, OpenRouter, Ollama,
-  vLLM). Good at reading text and at KIE; **not** a reliable source of boxes —
-  general chat VLMs place line boxes poorly (measured: mean IoU 0.285, table
-  cells 0.00). Use it to fill in text, not geometry.
-- **HTTP** — any backend behind a tiny convention, for your own inference server.
-- **Consensus** — meta-engine: runs several engines and turns their agreement
-  (IoU + text similarity) into a real confidence score.
-- **PaddleOCR (local, CPU)** — opt-in, rebuild with
-  `WITH_PADDLE=1 docker compose up -d --build` (adds several GB to the image).
+| Engine | Runs on | Notes |
+|---|---|---|
+| **OWLv2** | CPU | Default. Predictions do not change when you add a class |
+| LLMDet | CPU | Slower, sometimes tighter boxes. Max 91 classes per run |
+| GPU on Modal | your Modal account | For large batches |
+| Consensus | CPU | Runs several engines and scores their agreement |
+| VLM / HTTP | any endpoint | Bring your own model behind a small convention |
+
+Engines are plugins. A labeler is one method —
+`predict(image, config) -> list[Annotation]` — registered as a Python entry
+point, and the core never needs to know about it. See [`sdk/`](sdk).
+
+## What it is not good at
+
+Being honest saves you an afternoon:
+
+- **Attributes do not work.** `carpet` is found; `persian carpet` is not. No
+  open-vocabulary detector reliably separates a class from its adjective. Detect
+  the broad class, then split it downstream.
+- **Crowded scenes are harder than single objects.** On our benchmark, F1 drops
+  from 0.89 on product-style photos to 0.78 on cluttered rooms.
+- **Zero-shot is a first draft, not a finished dataset.** A model fine-tuned on
+  your corrected data will beat it on your domain. That is the point: this tool
+  gets you to that data faster.
+- Boxes only. No masks, no polygons, no keypoints, no video.
+
+## Benchmark
+
+Measured on 79 photos from LVIS val (323 objects, 114 classes) spanning cluttered
+scenes, street shots, phone snaps and product-style images. Each image was
+prompted with its own classes, IoU 0.5, greedy matching.
+
+| Engine | F1 | Precision | Recall | Sec/image (CPU) |
+|---|---|---|---|---|
+| OWLv2 (default) | 0.823 | 0.826 | 0.820 | 2.3 |
+| LLMDet base | 0.848 | 0.867 | 0.830 | 4.7 |
+
+Treat these as a starting point, not a verdict: 323 objects is a small sample,
+and LVIS is a friendly benchmark for this family of models. What matters is how
+an engine does on *your* photos.
+
+One finding worth reusing elsewhere: the stock
+`post_process_grounded_object_detection` in `transformers` keeps only the
+best-scoring class per box, which silently dropped 12% of detections in our runs
+by relabeling them with a neighbouring class (`kitchen sink` → `sink`,
+`table lamp` → `lamp`). Emitting boxes per query instead recovers all of them and
+makes predictions independent of how many classes you have.
+
+## Thresholds
+
+Defaults come from the benchmark above:
+
+- **0.25** to show a box to a human (precision 0.83, recall 0.82)
+- **0.40** to accept in bulk without looking (precision 0.94)
 
 ## Architecture
 
-Monorepo layout:
-
 ```
-AutoLabelUi/
-├── docker-compose.yml    # postgres, minio, redis, api, worker, web
-├── sdk/                  # pip package: labeler plugin contract (autolabelui-sdk)
-├── server/               # FastAPI + SQLAlchemy (async) + arq worker
-│   └── app/services/     #   ingest.py (format converters), export.py (dataset formats)
-├── web/                  # React + TypeScript (Vite) — Review UI
-├── labelers/             # engine plugins (pip packages, entry points)
-│   ├── rapidocr/         #   DEFAULT: PP-OCRv5 det+rec on onnxruntime (CPU)
-│   ├── paddleocr/        #   heavyweight local det+rec (CPU, opt-in via WITH_PADDLE=1)
-│   ├── vlm/              #   any VLM via OpenAI-compatible API
-│   ├── http/             #   generic HTTP labeler (any backend behind one convention)
-│   └── consensus/        #   meta-labeler: engine agreement -> real confidence
-└── deploy/
-    └── modal/            # Modal recipes for serverless GPU inference
-        ├── vlm.py              # vLLM + Qwen2.5-VL (OpenAI-compatible endpoint)
-        └── paddleocr_modal.py  # PaddleOCR on GPU (HTTP-labeler convention)
+docker-compose.yml    postgres, minio, redis, api, worker, web
+sdk/                  labeler plugin contract (pip package)
+server/               FastAPI + SQLAlchemy (async) + arq worker
+web/                  React + TypeScript review UI
+labelers/             engine plugins
+deploy/modal/         serverless GPU recipes
 ```
 
-One universal annotation model covers detection / recognition / layout / KIE:
-geometry (bbox/polygon), label, text, attrs, plus provenance
-(source, confidence, status). Exporters are adapters over this model, so new
-formats are cheap to add.
+One annotation model covers detection and OCR alike: geometry, label, text,
+attributes, plus provenance — which engine produced it, with what confidence,
+and what the human did with it. That last part is what makes quality
+measurable instead of anecdotal.
 
-## Writing a labeler plugin
+OCR is still supported as a second task type (`Project.task_type`), with
+PaddleOCR and VLM engines and PaddleOCR export formats.
 
-A labeler is a plain class implementing the SDK protocol — no inheritance
-required:
+## Development
 
-```python
-from autolabelui_sdk import Annotation, BBox, Capability
+`docker compose up -d --build` (without `-f`) picks up
+`docker-compose.override.yml` and swaps in the Vite dev server with hot reload,
+`uvicorn --reload` and live-mounted source. See
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
-class MyLabeler:
-    name = "my-ocr"
-    version = "0.1.0"
-    capabilities = {Capability.DETECTION, Capability.RECOGNITION}
+## Security
 
-    def predict(self, image: bytes, config: dict) -> list[Annotation]:
-        return [Annotation(geometry=BBox(10, 10, 100, 30), text="hello", confidence=0.95)]
-```
+- Change the default credentials in `.env` before exposing anything.
+- Ports bind to `127.0.0.1`. Put a TLS-terminating proxy in front.
+- Set `APP_ACCESS_TOKEN` if anyone else can reach the API port: without it, the
+  settings endpoints that accept your Modal token and trigger deploys are open.
+- Set `S3_PUBLIC_ENDPOINT_URL` when deploying beyond localhost, or image
+  previews break — they are presigned URLs opened directly against MinIO.
 
-```toml
-# your plugin's pyproject.toml
-[project.entry-points."autolabelui.labelers"]
-my_ocr = "my_package:MyLabeler"
-```
+## Roadmap
 
-Install the package next to the worker and it appears in the engine list. See
-[`sdk/README.md`](sdk/README.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
-
-## Security notes
-
-- **Change the default credentials.** Everything in `.env.example` is for
-  local development only.
-- Service ports are bound to localhost by default — put a reverse proxy with
-  TLS and auth in front before exposing anything.
-- When deploying beyond localhost, set `S3_PUBLIC_ENDPOINT_URL` so presigned
-  image URLs point at an address the browser can reach.
-- The GPU endpoint deployed from **Settings** is protected with a bearer token
-  generated by the platform. Recipes you deploy by hand (`modal deploy ...`)
-  are public at unguessable URLs unless you set `AUTOLABELUI_GPU_TOKEN` —
-  anyone who learns the URL can spend your GPU budget.
-- Your Modal token is encrypted at rest; the encryption key is generated on
-  first start and kept in a Docker volume, so back it up with your database.
+See [ROADMAP.md](ROADMAP.md). Box editing landed recently; next up is quality
+calibration on your own data, separating the prompt from the class name, and
+importing existing COCO/YOLO datasets.
 
 ## License
 
-[AGPL-3.0](LICENSE). If you run a modified version as a network service, you
-must offer its source code to the users of that service.
+[AGPL-3.0](LICENSE). Run a modified version as a network service and you owe its
+source to your users.
+
+Demo photos come from [COCO](https://cocodataset.org) / Flickr under
+Creative Commons Attribution licenses — see [docs/DEMO_IMAGES.md](docs/DEMO_IMAGES.md).

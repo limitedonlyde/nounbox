@@ -34,13 +34,13 @@ function ProjectsPage() {
 
   return (
     <div>
-      <h1>Проекты</h1>
+      <h1>Projects</h1>
 
       <form className="project-form" onSubmit={create}>
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="Название нового проекта"
+          placeholder="New project name"
         />
         <select
           value={taskType}
@@ -49,13 +49,13 @@ function ProjectsPage() {
           <option value="detection">{TASK_TITLES.detection}</option>
           <option value="ocr">{TASK_TITLES.ocr}</option>
         </select>
-        <button type="submit">Создать</button>
+        <button type="submit">Create</button>
       </form>
 
       {error && <p className="error">{error}</p>}
 
       {projects.length === 0 ? (
-        <p className="muted">Проектов пока нет — создайте первый.</p>
+        <p className="muted">No projects yet — create the first one.</p>
       ) : (
         <ul className="project-list">
           {projects.map((p) => (

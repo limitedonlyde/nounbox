@@ -112,7 +112,7 @@ async def test_modal_gpu_requested_but_not_ready_fails_job(
     job = await get_job(session_factory, job_id)
     assert job.status == JobStatus.FAILED
     assert "modal_gpu" in job.result["error"]
-    assert "Нужен токен Modal" in job.result["error"]
+    assert "A Modal token is required" in job.result["error"]
 
 
 async def test_all_labelers_run_skips_unready_gpu(session_factory, key_path, monkeypatch):
@@ -125,7 +125,7 @@ async def test_all_labelers_run_skips_unready_gpu(session_factory, key_path, mon
 
     job = await get_job(session_factory, job_id)
     assert job.status == JobStatus.FAILED
-    assert "разворачивается" in job.result["error"]
+    assert "deploying" in job.result["error"]
 
 
 async def test_modal_gpu_config_gets_endpoint_from_settings(
@@ -266,7 +266,7 @@ async def test_deploy_gpu_without_token_fails_gracefully(
         job = await session.get(Job, uuid.UUID(job_id))
         row = (await session.execute(select(InstanceSettings))).scalar_one()
     assert job.status == JobStatus.FAILED
-    assert "Токен Modal" in job.result["error"]
+    assert "No Modal token saved" in job.result["error"]
     assert row.gpu_status == GpuStatus.FAILED
 
 

@@ -87,7 +87,7 @@ def test_resolve_classes_rejects_missing():
 
 
 def test_resolve_classes_rejects_empty_list():
-    with pytest.raises(ValueError, match="добавьте классы проекта"):
+    with pytest.raises(ValueError, match="add the project classes"):
         mod.resolve_classes({"classes": []})
 
 
@@ -129,7 +129,7 @@ def test_class_limit_counts_after_dedupe():
 
 def test_prompt_token_limit_is_the_second_gate():
     """91 класса мало, если имена длинные: лимит модели — в токенах, не в классах."""
-    with pytest.raises(ValueError, match="токенов"):
+    with pytest.raises(ValueError, match="tokens"):
         mod.check_prompt_tokens(319, 256, 91)
     assert mod.check_prompt_tokens(256, 256, 91) is None
 

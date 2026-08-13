@@ -127,7 +127,7 @@ class Owlv2Labeler:
         classes = [str(c).strip() for c in (config.get("classes") or []) if str(c).strip()]
         if not classes:
             raise ValueError(
-                "owlv2: не заданы классы — добавьте классы проекта перед разметкой"
+                "owlv2: no classes given — add the project classes before labeling"
             )
 
         score_threshold = float(config.get("score_threshold", DEFAULT_SCORE_THRESHOLD))

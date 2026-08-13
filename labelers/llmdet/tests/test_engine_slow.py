@@ -93,7 +93,7 @@ def test_too_long_prompt_raises_before_the_forward(engine):
     classes = [f"wooden {name}" for name in TYPICAL_CLASSES]
     tokens = engine.processor.tokenizer(mod.build_prompt(classes))["input_ids"]
     assert len(tokens) > engine.max_text_len  # именно этот случай мы и защищаем
-    with pytest.raises(ValueError, match="токенов"):
+    with pytest.raises(ValueError, match="tokens"):
         engine.detect(Image.new("RGB", (64, 64)), classes, 0.35)
 
 

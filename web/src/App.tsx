@@ -11,9 +11,9 @@ function App() {
         <Link to="/" className="logo">
           AutoLabelUi
         </Link>
-        <span className="muted">авторазметка датасетов: детекция и OCR</span>
+        <span className="muted">auto-labeling for datasets: detection and OCR</span>
         <Link to="/settings" className="topbar-link">
-          Настройки
+          Settings
         </Link>
       </header>
       <main className="container">

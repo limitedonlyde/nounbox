@@ -71,7 +71,7 @@ async def deploy_gpu(request: Request, session: AsyncSession = Depends(get_sessi
     """Развернуть GPU-рецепт в аккаунт Modal пользователя. Прогресс — в GET /jobs/{id}."""
     row = await settings_store.get_or_create(session)
     if not (row.modal_token_id and row.modal_token_secret_encrypted):
-        raise HTTPException(400, "Сначала сохраните токен Modal в настройках")
+        raise HTTPException(400, "Save a Modal token in the settings first")
 
     # payload — только неsecret-данные: токен воркер берёт из настроек сам
     job = Job(

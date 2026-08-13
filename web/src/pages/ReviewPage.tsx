@@ -635,7 +635,7 @@ function ReviewPage() {
     if (isOcr) setTimeout(() => textRef.current?.focus(), 0);
   };
 
-  if (!image) return <p className="muted">{error ?? "Загрузка..."}</p>;
+  if (!image) return <p className="muted">{error ?? "Loading..."}</p>;
 
   const imageIndex = images.findIndex((i) => i.id === imageId);
   const done = annotations.filter(
@@ -653,9 +653,9 @@ function ReviewPage() {
   return (
     <div>
       <div className="toolbar">
-        <Link to={`/projects/${projectId}`}>← к списку</Link>
+        <Link to={`/projects/${projectId}`}>← back to project</Link>
         <span className="muted">
-          изображение {imageIndex + 1} / {images.length} · проверено {done}/
+          image {imageIndex + 1} / {images.length} · reviewed {done}/
           {annotations.length}
         </span>
         <button
@@ -665,31 +665,31 @@ function ReviewPage() {
           title={
             canDraw
               ? "D"
-              : "Сначала добавьте классы проекта — новому боксу нужен класс"
+              : "Add project classes first — a new box needs a class"
           }
         >
-          + бокс
+          + box
           {!isOcr && activeClass ? `: ${activeClass}` : ""}
         </button>
         <button onClick={() => void undo()} disabled={undoDepth === 0} title="Cmd+Z">
-          ↶ отменить
+          ↶ undo
         </button>
         {zoomed && (
           <button onClick={resetView} title="0">
-            ⤢ весь кадр
+            ⤢ fit image
           </button>
         )}
         <span className="zoom-hint muted">
           {zoomed
-            ? "колесо — зум, пробел+перетаскивание — сдвиг"
-            : "колесо — зум"}
+            ? "wheel — zoom, space+drag — pan"
+            : "wheel — zoom"}
         </span>
         <span className="toolbar-group">
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
           >
-            <option value="all">все статусы</option>
+            <option value="all">all statuses</option>
             <option value="pending">pending</option>
             <option value="accepted">accepted</option>
             <option value="edited">edited</option>
@@ -843,12 +843,12 @@ function ReviewPage() {
           {!isOcr && (
             <div className="class-legend">
               <div className="class-legend-head">
-                Классы <span className="muted">(1-9 — назначить)</span>
+                Classes <span className="muted">(1-9 — assign)</span>
               </div>
               {classes.length === 0 ? (
                 <p className="muted">
-                  Классов нет —{" "}
-                  <Link to={`/projects/${projectId}`}>добавьте их в проекте</Link>.
+                  No classes yet —{" "}
+                  <Link to={`/projects/${projectId}`}>add them in the project</Link>.
                 </p>
               ) : (
                 <ul>
@@ -857,7 +857,7 @@ function ReviewPage() {
                       key={c.id}
                       className={c.name === activeClass ? "active" : ""}
                       onClick={() => pickClass(c.name)}
-                      title="назначить выделенной аннотации"
+                      title="assign to the selected annotation"
                     >
                       <span className="class-dot" style={{ background: c.color }} />
                       <span className="class-name">{c.name}</span>
@@ -894,7 +894,7 @@ function ReviewPage() {
                 />
               ) : (
                 <label className="editor-field">
-                  класс
+                  class
                   <select
                     value={selected.label}
                     disabled={classes.length === 0}
@@ -902,7 +902,7 @@ function ReviewPage() {
                   >
                     {!classByName.has(selected.label) && (
                       <option value={selected.label}>
-                        {selected.label || "—"} — нет в проекте
+                        {selected.label || "—"} — not in the project
                       </option>
                     )}
                     {classes.map((c, i) => (
@@ -916,7 +916,7 @@ function ReviewPage() {
               )}
 
               <div className="editor-actions">
-                {isOcr && <button onClick={() => void saveDraft()}>Сохранить</button>}
+                {isOcr && <button onClick={() => void saveDraft()}>Save</button>}
                 <button onClick={() => void setStatusAndAdvance(selected.id, "accepted")}>
                   ✓ <kbd>A</kbd>
                 </button>
@@ -928,9 +928,9 @@ function ReviewPage() {
             </div>
           ) : (
             <p className="muted">
-              Кликните аннотацию. Клавиши: ↑↓ — выбор, ←→ — страницы, A —
-              принять, R — отклонить, {isOcr ? "E — текст, " : "1-9 — класс, "}D
-              — новый бокс, Del — удалить.
+              Click an annotation. Keys: ↑↓ — select, ←→ — prev/next image, A —
+              accept, R — reject, {isOcr ? "E — text, " : "1-9 — class, "}D —
+              new box, Del — delete.
             </p>
           )}
 

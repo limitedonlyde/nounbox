@@ -54,7 +54,7 @@ async def test_modal_gpu_unavailable_without_token(client, monkeypatch):
     gpu = items["modal_gpu"]
     assert gpu["requires"] == "modal"
     assert gpu["available"] is False
-    assert gpu["reason"] == "Нужен токен Modal"
+    assert gpu["reason"] == "A Modal token is required"
 
 
 async def test_modal_gpu_available_when_gpu_ready(client, session_factory, monkeypatch):
@@ -82,7 +82,7 @@ async def test_deploying_gpu_reports_progress_reason(client, session_factory, mo
     items = {i["name"]: i for i in (await client.get("/api/v1/labelers")).json()}
 
     assert items["modal_gpu"]["available"] is False
-    assert "разворачивается" in items["modal_gpu"]["reason"]
+    assert "deploying" in items["modal_gpu"]["reason"]
 
 
 async def test_core_labelers_listed_even_if_plugin_missing(client, monkeypatch):
@@ -91,7 +91,7 @@ async def test_core_labelers_listed_even_if_plugin_missing(client, monkeypatch):
     items = {i["name"]: i for i in (await client.get("/api/v1/labelers")).json()}
 
     assert items["rapidocr"]["available"] is False
-    assert "не установлен" in items["rapidocr"]["reason"]
+    assert "not installed" in items["rapidocr"]["reason"]
     assert items["http"]["available"] is True
     assert items["http"]["requires"] == "config"
 
@@ -116,7 +116,7 @@ async def test_owlv2_listed_even_if_plugin_missing(client, monkeypatch):
     items = {i["name"]: i for i in (await client.get("/api/v1/labelers")).json()}
 
     assert items["owlv2"]["available"] is False
-    assert "не установлен" in items["owlv2"]["reason"]
+    assert "not installed" in items["owlv2"]["reason"]
 
 
 async def test_owlv2_is_first_detection_engine(client, monkeypatch):

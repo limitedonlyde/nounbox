@@ -85,7 +85,7 @@ function ProjectPage() {
   }, [projectId]);
 
   useEffect(() => {
-    load().catch((err) => setMessage(`Ошибка загрузки: ${errorText(err)}`));
+    load().catch((err) => setMessage(`Failed to load: ${errorText(err)}`));
   }, [load]);
 
   const watchJob = useCallback(
@@ -105,10 +105,10 @@ function ProjectPage() {
             j.status === "done"
               ? Number(j.result.skipped_already_labeled ?? 0) > 0 &&
                 Number(j.result.annotations_created ?? 0) === 0
-                ? "Все изображения уже размечены этим движком. Если вы меняли " +
-                  "список классов — нажмите «Разметить заново»."
-                : `Готово: создано аннотаций ${String(j.result.annotations_created ?? 0)}`
-              : `Ошибка: ${String(j.result.error ?? "unknown")}`
+                ? "Every image is already labeled by this engine. If you " +
+                  "changed the class list, use “Relabel all”."
+                : `Done. Annotations created: ${String(j.result.annotations_created ?? 0)}`
+              : `Error: ${String(j.result.error ?? "unknown")}`
           );
           void load();
         } catch (err) {
@@ -116,7 +116,7 @@ function ProjectPage() {
           if (misses < 3) return;
           stopPoll();
           setBusy(false);
-          setMessage(`Ошибка: ${errorText(err)}`);
+          setMessage(`Error: ${errorText(err)}`);
         }
       }, 3000);
     },
@@ -132,7 +132,7 @@ function ProjectPage() {
       .getActiveJob(projectId)
       .then((job) => {
         if (!alive || !job) return;
-        setMessage("Autolabel продолжается...");
+        setMessage("Autolabel is still running...");
         watchJob(job.id);
       })
       .catch(() => undefined);
@@ -149,7 +149,7 @@ function ProjectPage() {
       .catch(
         (err) =>
           alive &&
-          setMessage(`Не удалось получить список движков: ${errorText(err)}`)
+          setMessage(`Could not load the engine list: ${errorText(err)}`)
       );
     return () => {
       alive = false;
@@ -196,26 +196,26 @@ function ProjectPage() {
   const upload = async (files: FileList | null) => {
     if (!files?.length) return;
     setBusy(true);
-    setMessage("Загрузка и ingest...");
+    setMessage("Uploading and ingesting...");
     for (const file of Array.from(files)) {
       await api.uploadDocument(projectId, file);
     }
     // ingest идёт в фоне — обновим список через пару секунд
     setTimeout(() => void load(), 3000);
     setBusy(false);
-    setMessage(`Загружено файлов: ${files.length}. Ingest выполняется в фоне.`);
+    setMessage(`Files uploaded: ${files.length}. Ingest runs in the background.`);
   };
 
   const autolabel = async (rerun = false) => {
     setBusy(true);
-    setMessage("Autolabel запущен...");
+    setMessage("Autolabel started...");
     let config: Record<string, unknown> = {};
     if (needsConfig) {
       try {
         config = engineConfig.trim() ? JSON.parse(engineConfig) : {};
       } catch {
         setBusy(false);
-        setMessage("Ошибка: config не является валидным JSON");
+        setMessage("Error: config is not valid JSON");
         return;
       }
     }
@@ -229,7 +229,7 @@ function ProjectPage() {
       job = await api.startAutolabel(projectId, engine, config, rerun);
     } catch (err) {
       setBusy(false);
-      setMessage(`Ошибка: ${errorText(err)}`);
+      setMessage(`Error: ${errorText(err)}`);
       return;
     }
     watchJob(job.id);
@@ -237,7 +237,7 @@ function ProjectPage() {
 
   const bulkAccept = async () => {
     const { accepted } = await api.bulkAccept(projectId, acceptThreshold);
-    setMessage(`Принято аннотаций: ${accepted} (confidence ≥ ${acceptThreshold})`);
+    setMessage(`Annotations accepted: ${accepted} (confidence ≥ ${acceptThreshold})`);
     void load();
   };
 
@@ -245,14 +245,14 @@ function ProjectPage() {
   const totalAnnotations = images.reduce((s, i) => s + i.total_annotations, 0);
 
   const autolabelHint = classesMissing
-    ? "Добавьте классы проекта перед запуском разметки"
+    ? "Add project classes before you start labeling"
     : selectedLabeler?.reason ?? undefined;
 
   return (
     <div>
       <h1>{project?.name ?? "..."}</h1>
       <p className="muted">
-        Тип задачи: <strong>{TASK_TITLES[taskType]}</strong>
+        Task type: <strong>{TASK_TITLES[taskType]}</strong>
       </p>
 
       {isDetection && (
@@ -265,7 +265,7 @@ function ProjectPage() {
 
       <div className="toolbar">
         <button onClick={() => fileInput.current?.click()} disabled={busy}>
-          Загрузить файлы
+          Upload files
         </button>
         <input
           ref={fileInput}
@@ -283,7 +283,7 @@ function ProjectPage() {
           {taskLabelers.map((l) => (
             <option key={l.name} value={l.name} disabled={!l.available}>
               {l.title}
-              {l.available ? "" : ` — ${l.reason ?? "недоступен"}`}
+              {l.available ? "" : ` — ${l.reason ?? "unavailable"}`}
             </option>
           ))}
         </select>
@@ -297,7 +297,7 @@ function ProjectPage() {
         )}
         {isDetection && (
           <label>
-            порог движка{" "}
+            engine threshold{" "}
             <input
               type="number"
               min={0}
@@ -305,7 +305,7 @@ function ProjectPage() {
               step={0.05}
               value={scoreThreshold}
               onChange={(e) => setScoreThreshold(Number(e.target.value))}
-              title="рамки ниже этого скора не показываем"
+              title="boxes below this score are not shown"
             />
           </label>
         )}
@@ -333,26 +333,26 @@ function ProjectPage() {
             classesMissing ||
             totalAnnotations === 0
           }
-          title="Перезапустить на всех изображениях: непроверенные рамки движка
-заменяются, принятые и исправленные вами остаются"
+          title="Run again on every image: unreviewed engine boxes are replaced,
+the ones you accepted or fixed stay"
         >
-          Разметить заново
+          Relabel all
         </button>
         {classesMissing ? (
           <span className="warning">
-            Добавьте классы проекта перед запуском разметки
+            Add project classes before you start labeling
           </span>
         ) : (
           engineBlocked && (
             <span className="muted">
-              {selectedLabeler?.reason ?? "движок недоступен"} —{" "}
-              <Link to="/settings">настройки</Link>
+              {selectedLabeler?.reason ?? "engine unavailable"} —{" "}
+              <Link to="/settings">settings</Link>
             </span>
           )
         )}
         <span className="toolbar-group">
           <label>
-            принять ≥{" "}
+            accept ≥{" "}
             <input
               type="number"
               min={0}
@@ -363,7 +363,7 @@ function ProjectPage() {
             />
           </label>
           <button onClick={() => void bulkAccept()} disabled={totalPending === 0}>
-            Принять все ≥ порога
+            Accept all above threshold
           </button>
         </span>
         <span className="toolbar-group">
@@ -381,7 +381,7 @@ function ProjectPage() {
             className="button-link"
             href={`/api/v1/projects/${projectId}/export?format=${exportFormat}`}
           >
-            Экспорт ⤓
+            Export ⤓
           </a>
         </span>
       </div>
@@ -389,8 +389,8 @@ function ProjectPage() {
       {message && <p className="muted">{message}</p>}
 
       <p className="muted">
-        Изображений: {images.length} · Аннотаций: {totalAnnotations} · Ожидают
-        проверки: <strong>{totalPending}</strong>
+        Images: {images.length} · Annotations: {totalAnnotations} · Pending
+        review: <strong>{totalPending}</strong>
       </p>
 
       <div className="image-grid">
@@ -402,7 +402,7 @@ function ProjectPage() {
           >
             <Thumb imageId={img.id} />
             <div className="image-card-info">
-              стр. {img.page_index + 1} · анн.: {img.total_annotations}
+              page {img.page_index + 1} · ann.: {img.total_annotations}
               {img.pending_annotations > 0 && (
                 <span className="badge-pending"> {img.pending_annotations} ⏳</span>
               )}

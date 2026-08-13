@@ -47,7 +47,7 @@ class HttpLabeler:
         endpoint = config.get("endpoint") or DEFAULT_ENDPOINT
         if not endpoint:
             raise ValueError(
-                "http labeler: endpoint not set (config.endpoint или LABELER_HTTP_ENDPOINT)"
+                "http labeler: endpoint not set (config.endpoint or LABELER_HTTP_ENDPOINT)"
             )
 
         headers = {

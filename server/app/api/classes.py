@@ -128,7 +128,7 @@ def ensure_name_free(
     lowered = name.casefold()
     for item in existing:
         if item.id != skip_id and item.name.casefold() == lowered:
-            raise HTTPException(409, f"Класс {item.name!r} уже есть в проекте")
+            raise HTTPException(409, f"Class {item.name!r} already exists in this project")
 
 
 @router.get("/projects/{project_id}/classes", response_model=list[ProjectClassOut])
@@ -163,7 +163,7 @@ async def create_class(
         await session.commit()
     except IntegrityError:  # два одинаковых POST подряд — тоже конфликт, не 500
         await session.rollback()
-        raise HTTPException(409, f"Класс {body.name!r} уже есть в проекте")
+        raise HTTPException(409, f"Class {body.name!r} already exists in this project")
     await session.refresh(item)
     return item
 
@@ -206,9 +206,10 @@ async def replace_classes(
             409,
             {
                 "annotations": in_use_total,
-                "message": "Нельзя убрать классы с уже размеченными аннотациями: "
+                "message": "These classes cannot be removed, they are already used "
+                "in annotations: "
                 + ", ".join(in_use)
-                + ". Повторите с ?force=true, чтобы удалить их вместе с разметкой.",
+                + ". Repeat with ?force=true to delete those annotations too.",
                 "classes": [c.name for c in removed],
             },
         )
@@ -287,8 +288,8 @@ async def delete_class(
             {
                 "annotations": used,
                 "message": (
-                    f"Класс {item.name!r} используется в аннотациях: {used}. "
-                    "Повторите с ?force=true, чтобы удалить их вместе с классом"
+                    f"Class {item.name!r} is used in {used} annotations. "
+                    "Repeat with ?force=true to delete them along with the class"
                 ),
             },
         )

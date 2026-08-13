@@ -34,9 +34,9 @@ TOKEN_SECRET_PREFIX = "as-"
 PROXY_PREFIXES = ("wk-", "ws-")
 
 PROXY_TOKEN_HINT = (
-    "Похоже, введён proxy-токен (wk-…/ws-…) — он годится только для вызова "
-    "эндпоинта. Нужен API-токен из `modal token new`: token_id начинается "
-    "с ak-, секрет — с as-."
+    "This looks like a proxy token (wk-…/ws-…) — those only work for calling an "
+    "endpoint. A deploy needs an API token from `modal token new`: the token_id "
+    "starts with ak- and the secret with as-."
 )
 
 
@@ -55,13 +55,13 @@ class DeployedApp:
 def validate_token_pair(token_id: str, token_secret: str) -> str | None:
     """Локальная проверка формата пары токенов; None — формат в порядке."""
     if not token_id or not token_secret:
-        return "Укажите и token_id, и token_secret"
+        return "Provide both token_id and token_secret"
     if token_id.startswith(PROXY_PREFIXES) or token_secret.startswith(PROXY_PREFIXES):
         return PROXY_TOKEN_HINT
     if not token_id.startswith(TOKEN_ID_PREFIX):
-        return "token_id должен начинаться с ak- (создаётся командой `modal token new`)"
+        return "token_id must start with ak- (run `modal token new` to get one)"
     if not token_secret.startswith(TOKEN_SECRET_PREFIX):
-        return "token_secret должен начинаться с as- (создаётся командой `modal token new`)"
+        return "token_secret must start with as- (run `modal token new` to get one)"
     return None
 
 
@@ -80,8 +80,8 @@ def recipe_path() -> Path:
         if candidate.is_file():
             return candidate
     raise FileNotFoundError(
-        "GPU-рецепт не найден: ожидается /deploy/modal/paddleocr_modal.py "
-        "(в образе — COPY deploy/modal) либо путь в MODAL_GPU_RECIPE_PATH"
+        "GPU recipe not found: expected /deploy/modal/paddleocr_modal.py "
+        "(the image gets it from COPY deploy/modal), or a path in MODAL_GPU_RECIPE_PATH"
     )
 
 
@@ -97,7 +97,7 @@ def _friendly(exc: Exception, *secrets: str) -> str:
     if "Token ID is malformed" in message:
         return PROXY_TOKEN_HINT
     if "Token not found" in message:
-        return "Modal не знает такой токен — проверьте пару token_id/token_secret."
+        return "Modal does not know this token — check the token_id/token_secret pair."
     return message
 
 
@@ -112,17 +112,17 @@ async def _call(func, *args, **kwargs):
 def load_recipe_app(path: Path):
     spec = importlib.util.spec_from_file_location(RECIPE_MODULE_NAME, path)
     if spec is None or spec.loader is None:
-        raise ModalDeployError(f"GPU-рецепт не найден: {path}")
+        raise ModalDeployError(f"GPU recipe not found: {path}")
     module = importlib.util.module_from_spec(spec)
     # функции рецепта сериализуются по имени модуля — регистрируем его заранее
     sys.modules[RECIPE_MODULE_NAME] = module
     try:
         spec.loader.exec_module(module)
     except FileNotFoundError as exc:
-        raise ModalDeployError(f"GPU-рецепт не найден: {path}") from exc
+        raise ModalDeployError(f"GPU recipe not found: {path}") from exc
     app = getattr(module, "app", None)
     if app is None:
-        raise ModalDeployError(f"В рецепте {path} нет объекта app (modal.App)")
+        raise ModalDeployError(f"Recipe {path} has no app object (modal.App)")
     return app
 
 
@@ -148,14 +148,14 @@ async def deploy_gpu_app(
     app = load_recipe_app(resolved_path)
     endpoints = list(getattr(app, "registered_web_endpoints", []))
     if not endpoints:
-        raise ModalDeployError("В GPU-рецепте нет web-эндпоинта (@modal.asgi_app)")
+        raise ModalDeployError("The GPU recipe has no web endpoint (@modal.asgi_app)")
 
     # пустой modal_gpu_app_name — деплой под именем из самого рецепта
     app_name = app_name or settings.modal_gpu_app_name or app.name
     if not APP_NAME_RE.match(app_name):
         raise ModalDeployError(
-            f"Недопустимое имя приложения Modal {app_name!r}: "
-            "разрешены [a-zA-Z0-9._-], не длиннее 64 символов"
+            f"Invalid Modal app name {app_name!r}: "
+            "allowed characters are [a-zA-Z0-9._-], at most 64 of them"
         )
 
     logger.info("Deploying Modal app %s (recipe %s)", app_name, resolved_path)
@@ -173,7 +173,7 @@ async def deploy_gpu_app(
 
     if not endpoint_url:
         raise ModalDeployError(
-            f"Modal развернул {app_name}, но не вернул URL web-эндпоинта"
+            f"Modal deployed {app_name} but returned no web endpoint URL"
         )
     logger.info("Modal app %s deployed: %s", app_name, endpoint_url)
     return DeployedApp(

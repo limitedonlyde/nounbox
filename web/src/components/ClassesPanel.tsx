@@ -7,8 +7,7 @@ const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
 
 const normalize = (raw: string) => raw.trim().replace(/\s+/g, " ");
 
-const annotationsWord = (n: number) =>
-  n % 10 === 1 && n % 100 !== 11 ? "аннотации" : "аннотациях";
+const annotationsWord = (n: number) => (n === 1 ? "annotation" : "annotations");
 
 interface Props {
   projectId: string;
@@ -35,12 +34,12 @@ function ClassesPanel({ projectId, classes, onChanged }: Props) {
     if (!value) return;
     if (!ENGLISH_ONLY.test(value)) {
       setError(
-        `Имя «${value}» не английское. Пишите латиницей: carpet, sofa, chandelier.`
+        `The name “${value}” is not English. Use Latin letters: carpet, sofa, chandelier.`
       );
       return;
     }
     if (classes.some((c) => c.name.toLowerCase() === value.toLowerCase())) {
-      setError(`Класс «${value}» уже есть.`);
+      setError(`Class “${value}” already exists.`);
       return;
     }
     setBusy(true);
@@ -70,7 +69,7 @@ function ClassesPanel({ projectId, classes, onChanged }: Props) {
   };
 
   const remove = async (cls: ProjectClass) => {
-    if (!window.confirm(`Удалить класс «${cls.name}»?`)) return;
+    if (!window.confirm(`Delete class “${cls.name}”?`)) return;
     setBusy(true);
     try {
       await api.deleteClass(cls.id);
@@ -83,12 +82,10 @@ function ClassesPanel({ projectId, classes, onChanged }: Props) {
       }
       const where =
         used > 0
-          ? `в ${used} ${annotationsWord(used)}`
-          : "в существующих аннотациях";
+          ? `in ${used} ${annotationsWord(used)}`
+          : "in existing annotations";
       if (
-        !window.confirm(
-          `Класс «${cls.name}» используется ${where}. Удалить вместе с ними?`
-        )
+        !window.confirm(`Class “${cls.name}” is used ${where}. Delete them too?`)
       ) {
         setBusy(false);
         return;
@@ -115,7 +112,7 @@ function ClassesPanel({ projectId, classes, onChanged }: Props) {
       if (!value || seen.has(value.toLowerCase())) continue;
       if (!ENGLISH_ONLY.test(value)) {
         setError(
-          `Строка «${value}» не английская. Пишите латиницей: carpet, sofa, chandelier.`
+          `The line “${value}” is not English. Use Latin letters: carpet, sofa, chandelier.`
         );
         return;
       }
@@ -123,16 +120,16 @@ function ClassesPanel({ projectId, classes, onChanged }: Props) {
       names.push(value);
     }
     if (names.length === 0) {
-      setError("Список пуст — добавьте хотя бы один класс.");
+      setError("The list is empty — add at least one class.");
       return;
     }
     const dropped = classes.filter((c) => !seen.has(c.name.toLowerCase()));
     if (
       dropped.length > 0 &&
       !window.confirm(
-        `Список заменит текущие классы. Будут удалены: ${dropped
+        `This list replaces the current classes. These will be deleted: ${dropped
           .map((c) => c.name)
-          .join(", ")}. Продолжить?`
+          .join(", ")}. Continue?`
       )
     ) {
       return;
@@ -154,28 +151,28 @@ function ClassesPanel({ projectId, classes, onChanged }: Props) {
     <section className="classes-panel">
       <div className="classes-head">
         <h2>
-          Классы проекта <span className="muted">({classes.length})</span>
+          Project classes <span className="muted">({classes.length})</span>
         </h2>
         {bulkOpen ? (
           <button type="button" onClick={() => setBulkOpen(false)}>
-            Свернуть список
+            Collapse list
           </button>
         ) : (
           <button type="button" onClick={openBulk}>
-            Ввести списком
+            Enter as list
           </button>
         )}
       </div>
 
       <p className="hint">
-        Имя класса — <strong>только английскими словами</strong>: «carpet»,
-        «sofa», «chandelier». Модель ищет объекты по этому тексту, «ковёр» даст
-        пустой результат.
+        A class name must be <strong>plain English words</strong>: “carpet”,
+        “sofa”, “chandelier”. The model looks for objects by this text, so a name
+        in another language or script returns nothing.
       </p>
 
       <form className="class-add" onSubmit={(e) => void add(e)}>
         <label className="class-add-label">
-          Новый класс (English)
+          New class (English)
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -185,7 +182,7 @@ function ClassesPanel({ projectId, classes, onChanged }: Props) {
           />
         </label>
         <button type="submit" disabled={busy || !name.trim()}>
-          Добавить
+          Add
         </button>
       </form>
 
@@ -193,8 +190,7 @@ function ClassesPanel({ projectId, classes, onChanged }: Props) {
 
       {classes.length === 0 ? (
         <p className="muted">
-          Классов пока нет — разметка не запустится, пока не добавите хотя бы
-          один.
+          No classes yet — labeling will not start until you add at least one.
         </p>
       ) : (
         <ul className="class-list">
@@ -210,16 +206,16 @@ function ClassesPanel({ projectId, classes, onChanged }: Props) {
                 onBlur={(e) => {
                   if (e.target.value !== cls.color) void recolor(cls, e.target.value);
                 }}
-                title="цвет рамки в Review"
+                title="box color in Review"
               />
               <span className="class-name">{cls.name}</span>
-              {i < 9 && <kbd title="горячая клавиша в Review">{i + 1}</kbd>}
+              {i < 9 && <kbd title="hotkey in Review">{i + 1}</kbd>}
               <button
                 type="button"
                 className="class-remove"
                 onClick={() => void remove(cls)}
                 disabled={busy}
-                title="удалить класс"
+                title="delete class"
               >
                 ✕
               </button>
@@ -231,7 +227,7 @@ function ClassesPanel({ projectId, classes, onChanged }: Props) {
       {bulkOpen && (
         <form className="class-bulk" onSubmit={(e) => void applyBulk(e)}>
           <label className="class-add-label">
-            Одно английское имя в строке — список заменит текущие классы
+            One English name per line — this list replaces the current classes
             <textarea
               rows={6}
               value={bulkText}
@@ -242,10 +238,10 @@ function ClassesPanel({ projectId, classes, onChanged }: Props) {
           </label>
           <div className="class-bulk-actions">
             <button type="submit" disabled={busy}>
-              Сохранить список
+              Save list
             </button>
             <button type="button" onClick={() => setBulkOpen(false)}>
-              Отмена
+              Cancel
             </button>
           </div>
         </form>
