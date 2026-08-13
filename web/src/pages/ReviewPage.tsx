@@ -347,6 +347,18 @@ function ReviewPage() {
     }
   }, [patch]);
 
+  /** Кадр пуст и проверен: единственный способ отправить его в датасет фоном. */
+  const markEmpty = useCallback(async () => {
+    if (!image) return;
+    try {
+      const updated = await api.markImageReviewed(image.id, !image.reviewed);
+      setImage(updated);
+      setError(null);
+    } catch (err) {
+      setError(errorText(err));
+    }
+  }, [image]);
+
   const canDraw = isOcr || activeClass !== null;
 
   // --- горячие клавиши ---
@@ -674,6 +686,17 @@ function ReviewPage() {
         <button onClick={() => void undo()} disabled={undoDepth === 0} title="Cmd+Z">
           ↶ undo
         </button>
+        {/* Кадр без объектов иначе не попадёт в датасет: размечать нечего,
+            а фоновые примеры детектору нужны */}
+        {annotations.length === 0 && (
+          <button
+            className={image?.reviewed ? "active" : ""}
+            onClick={() => void markEmpty()}
+            title="Mark this image as checked and empty — it becomes a background example in the dataset"
+          >
+            {image?.reviewed ? "✓ marked empty" : "nothing here"}
+          </button>
+        )}
         {zoomed && (
           <button onClick={resetView} title="0">
             ⤢ fit image
@@ -927,14 +950,14 @@ function ReviewPage() {
               </div>
             </div>
           ) : (
-            <p className="muted">
+            <p className="hint">
               Click an annotation. Keys: ↑↓ — select, ←→ — prev/next image, A —
               accept, R — reject, {isOcr ? "E — text, " : "1-9 — class, "}D —
               new box, Del — delete.
             </p>
           )}
 
-          <ul className="ann-list">
+          <ul className="ann-list ann-list-card">
             {filtered.map((a) => (
               <li
                 key={a.id}

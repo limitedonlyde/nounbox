@@ -7,19 +7,54 @@ GPU, and nothing leaves your machine.
 
 ![AutoLabelUi in action](docs/demo.gif)
 
+> **Status: early.** The core loop works end to end and is covered by tests, but
+> the API and the database schema still move between releases, there is no
+> multi-user support, and migrations are not in place yet. Expect rough edges,
+> and pin an image tag if you depend on it.
+
+## Quickstart
+
 ```bash
-git clone https://github.com/USER/AutoLabelUi && cd AutoLabelUi
-cp .env.example .env
-docker compose -f docker-compose.yml up -d --build
+curl -fsSLO https://raw.githubusercontent.com/OWNER/AutoLabelUi/main/docker-compose.ghcr.yml
+docker compose -f docker-compose.ghcr.yml up -d
 ```
 
 Open http://localhost:8080, create a project, type the classes you care about,
 drop in photos, press **Autolabel**.
 
-> **Status: early.** The core loop works end to end and is covered by tests, but
-> the API and the database schema still move between releases, there is no
-> multi-user support, and migrations are not in place yet. Expect rough edges,
-> and pin a commit if you depend on it.
+Prebuilt images (`linux/amd64` and `linux/arm64`) come from GHCR, so nothing is
+compiled on your machine: Docker and roughly 3 GB of disk are all it takes. The
+detector weights (~620 MB) download once on the first autolabel run and are
+cached in a volume.
+
+> Replace `OWNER` with the GitHub account this repository lives under —
+> lowercase, container image names have no capitals. Either edit the file once
+> or keep it untouched and set `AUTOLABELUI_OWNER=…` in a `.env` beside it.
+> `AUTOLABELUI_TAG=v0.1.0` pins a release; the default, `latest`, tracks `main`.
+
+Everything else is optional. Defaults are the development credentials from
+[`.env.example`](.env.example); to change them — or the S3 endpoint, or the VLM
+keys — drop a `.env` next to the compose file.
+
+> **Upgrading is not safe yet.** There are no database migrations: the schema is
+> created on first start and new columns do not appear on an existing database.
+> A version bump can therefore require `docker compose down -v`, which deletes
+> your annotations. **Export your dataset before upgrading**, and pin a tag
+> (`AUTOLABELUI_TAG=v0.2.0`) so a `pull` cannot move you unexpectedly. Migrations
+> are the next infrastructure item on the [roadmap](ROADMAP.md).
+
+### Build from source instead
+
+```bash
+git clone https://github.com/OWNER/AutoLabelUi && cd AutoLabelUi
+cp .env.example .env
+docker compose -f docker-compose.yml up -d --build
+```
+
+Slower (the backend image is ~1.7 GB and takes minutes to assemble), but it is
+the path to take when you patch the server, add a labeler plugin, or want
+PaddleOCR compiled in (`WITH_PADDLE=1`). See
+[CONTRIBUTING.md](CONTRIBUTING.md) for the hot-reload dev setup.
 
 ## Why this exists
 
@@ -120,13 +155,18 @@ Defaults come from the benchmark above:
 ## Architecture
 
 ```
-docker-compose.yml    postgres, minio, redis, api, worker, web
+docker-compose.yml    postgres, minio, redis, api, worker, web (built locally)
+docker-compose.ghcr.yml  same stack from published images, no build step
 sdk/                  labeler plugin contract (pip package)
 server/               FastAPI + SQLAlchemy (async) + arq worker
 web/                  React + TypeScript review UI
 labelers/             engine plugins
 deploy/modal/         serverless GPU recipes
 ```
+
+`api` and `worker` are the same image (`autolabelui-server`) started with
+different commands — one serves HTTP, the other drains the arq queue — so they
+can never drift apart on a shared database.
 
 One annotation model covers detection and OCR alike: geometry, label, text,
 attributes, plus provenance — which engine produced it, with what confidence,

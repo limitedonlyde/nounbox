@@ -1,0 +1,139 @@
+# Сборка и публикация образов в GitHub Container Registry.
+#
+# Что публикуется:
+#   ghcr.io/<owner>/autolabelui-server — api и worker (образ один, различаются
+#                                        только команды в compose)
+#   ghcr.io/<owner>/autolabelui-web    — собранная статика за nginx (цель prod)
+#
+# Эти образы подключает docker-compose.ghcr.yml: пользователю не нужно ничего
+# собирать локально — только скачать compose-файл и поднять стек.
+name: Publish images
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: "Platforms to build (drop arm64 for a quick test build)"
+        default: linux/amd64,linux/arm64
+        type: string
+      push:
+        description: "Push to GHCR. Off by default for manual runs: a quick
+          amd64-only build must not overwrite the multi-arch :latest"
+        default: false
+        type: boolean
+
+# GITHUB_TOKEN: только пуш пакетов и чтение исходников
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  # сборки одного ref'а не наслаиваются друг на друга; для тегов отмена
+  # запрещена — начатый релиз должен доехать до конца
+  group: publish-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
+jobs:
+  # без зелёных тестов образ в GHCR не уезжает
+  test:
+    uses: ./.github/workflows/test.yml
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    # холодная сборка server под QEMU/arm64 — десятки минут, запас нужен
+    timeout-minutes: 150
+    strategy:
+      # web не должен оставаться неопубликованным из-за падения server
+      fail-fast: false
+      matrix:
+        include:
+          # api и worker собираются из одного Dockerfile с одинаковыми
+          # аргументами, то есть побайтово совпадают. Публикуем один образ —
+          # так исключён рассинхрон версий api и worker'а на общей БД.
+          - image: server
+            context: .
+            dockerfile: server/Dockerfile
+            target: ""
+            description: AutoLabelUi backend (FastAPI api + arq worker)
+          - image: web
+            context: ./web
+            dockerfile: web/Dockerfile
+            target: prod
+            description: AutoLabelUi review UI (static bundle behind nginx)
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # GHCR не принимает заглавные буквы в имени образа, а владелец репозитория
+      # может быть записан как угодно (MyOrg) — приводим к нижнему регистру
+      - name: Resolve image namespace
+        id: ns
+        run: echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
+      # эмуляция arm64 на amd64-раннере. Если репозиторий публичный, дешевле
+      # и быстрее собирать arm64 нативно: вынести матрицу по платформам на
+      # runs-on: ubuntu-24.04-arm и слить манифесты — тогда этот шаг не нужен.
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ steps.ns.outputs.owner }}/autolabelui-${{ matrix.image }}
+          tags: |
+            type=raw,value=latest,enable=${{ github.event_name != 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+            type=semver,pattern=v{{version}}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}},enable=${{ !startsWith(github.ref, 'refs/tags/v0.') }}
+            type=sha
+          labels: |
+            org.opencontainers.image.title=autolabelui-${{ matrix.image }}
+            org.opencontainers.image.description=${{ matrix.description }}
+            org.opencontainers.image.licenses=AGPL-3.0-only
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          # пусто для server: в его Dockerfile одна стадия
+          target: ${{ matrix.target }}
+          platforms: ${{ inputs.platforms || 'linux/amd64,linux/arm64' }}
+          push: ${{ github.event_name != 'workflow_dispatch' || inputs.push }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+          # кеш слоёв между запусками. scope на образ обязателен: с общим
+          # server и web вытесняли бы кеш друг друга. Лимит GitHub — 10 ГБ на
+          # репозиторий, при вытеснении сборка просто идёт с нуля.
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+
+      - name: Report published tags
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          {
+            echo "### autolabelui-${{ matrix.image }}"
+            echo '```'
+            echo "$TAGS"
+            echo "$DIGEST"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -34,6 +34,8 @@ export interface ImageMeta {
   width: number;
   height: number;
   blur_score: number | null;
+  /** Человек подтвердил, что смотрел кадр (нужно для кадров без объектов). */
+  reviewed: boolean;
 }
 
 export type Geometry =
@@ -293,6 +295,10 @@ export const api = {
       `/projects/${projectId}/autolabel`,
       json("POST", { labeler, config, rerun })
     ),
+  /** Пометить кадр просмотренным: так пустой кадр попадает в датасет как фон. */
+  markImageReviewed: (imageId: string, reviewed: boolean) =>
+    request<ImageMeta>(`/images/${imageId}`, json("PATCH", { reviewed })),
+
   getJob: (id: string) => request<Job>(`/jobs/${id}`),
   // незавершённая задача проекта: страница подхватывает её после перезагрузки
   getActiveJob: (projectId: string) =>

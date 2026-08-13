@@ -258,6 +258,7 @@ function SettingsPage() {
         <h2>GPU engine</h2>
         {settings ? <GpuStatusBlock settings={settings} /> : <p className="muted">...</p>}
         <button
+          className="primary"
           onClick={() => void deploy()}
           disabled={busy || !settings?.modal_configured || deploying}
         >

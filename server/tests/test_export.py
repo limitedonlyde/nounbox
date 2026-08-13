@@ -358,5 +358,38 @@ def test_manifest_lists_classes_and_task_type():
 
 
 def test_empty_export_fails():
-    with pytest.raises(export_service.ExportError, match="No verified annotations"):
+    with pytest.raises(export_service.ExportError, match="No reviewed images"):
         export_service.build_zip("yolo_detect", [], "p", "detection", ("carpet",))
+
+
+# --- фоновые кадры (проверено человеком, объектов нет) ---
+def _files_of(zf: zipfile.ZipFile, image: Image) -> list[str]:
+    """Пути снимка в архиве — сплит на маленькой выборке может быть переназначен."""
+    return [n for n in zf.namelist() if image.id.hex in n]
+
+
+def test_yolo_writes_empty_label_file_for_background_frame():
+    with_object, background = make_image(100, 100), make_image(100, 100)
+    zf = build(
+        "yolo_detect",
+        [item(with_object, [bbox_ann("carpet", 10, 10, 20, 20)]), item(background, [])],
+    )
+    labels = [n for n in _files_of(zf, background) if n.startswith("labels/")]
+    assert labels and all(zf.read(n) == b"" for n in labels)
+    # картинка в датасете есть — пустой .txt рядом с ней и есть негативный пример
+    assert any(n.startswith("images/") for n in _files_of(zf, background))
+    manifest = json.loads(zf.read("manifest.json"))
+    assert manifest["images"] == 2
+    assert manifest["annotations"] == 1
+    assert manifest["background_images"] == 1
+
+
+def test_coco_lists_background_frame_in_images():
+    with_object, background = make_image(100, 100), make_image(100, 100)
+    zf = build(
+        "coco",
+        [item(with_object, [bbox_ann("carpet", 10, 10, 20, 20)]), item(background, [])],
+    )
+    coco = json.loads(zf.read("annotations.json"))
+    assert [entry["id"] for entry in coco["images"]] == [1, 2]
+    assert [entry["image_id"] for entry in coco["annotations"]] == [1]

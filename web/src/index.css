@@ -1,320 +1,603 @@
+/* ============================================================================
+   AutoLabelUi — оформление.
+
+   Правило, из которого следует всё остальное: содержимое здесь — фотографии
+   пользователя. Интерфейс не должен с ними соперничать, поэтому поверхности
+   нейтральные, цветом выделяется только то, что несёт смысл: класс объекта,
+   статус проверки, единственное главное действие на экране.
+   ============================================================================ */
+
 :root {
-  font-family: system-ui, -apple-system, sans-serif;
   color-scheme: light dark;
+
+  /* Поверхности: фон -> карточка -> вложенный блок */
+  --bg: #f7f8fa;
+  --surface: #ffffff;
+  --surface-2: #f2f4f7;
+  --border: #e3e6ea;
+  --border-strong: #cbd2da;
+
+  --text: #12161c;
+  --text-dim: #656f7d;
+  --text-faint: #939ba6;
+
+  --accent: #2f6feb;
+  --accent-contrast: #ffffff;
+  --accent-soft: #e8f0fe;
+
+  --ok: #1f9d55;
+  --warn: #c77700;
+  --danger: #d64545;
+
+  --radius: 10px;
+  --radius-sm: 7px;
+  --radius-lg: 14px;
+
+  --shadow-sm: 0 1px 2px rgb(16 22 30 / 6%);
+  --shadow: 0 2px 8px rgb(16 22 30 / 8%), 0 1px 2px rgb(16 22 30 / 4%);
+
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-synthesis: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1116;
+    --surface: #161b22;
+    --surface-2: #1c222b;
+    --border: #262d38;
+    --border-strong: #39424f;
+
+    --text: #e6edf3;
+    --text-dim: #9aa5b1;
+    --text-faint: #6e7681;
+
+    --accent: #4c8dff;
+    --accent-contrast: #0e1116;
+    --accent-soft: #17233a;
+
+    --ok: #3fb950;
+    --warn: #d29922;
+    --danger: #f85149;
+
+    --shadow-sm: 0 1px 2px rgb(0 0 0 / 30%);
+    --shadow: 0 2px 10px rgb(0 0 0 / 35%);
+  }
+}
+
+* {
+  box-sizing: border-box;
 }
 
 body {
   margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+}
+
+h1 {
+  font-size: 1.55rem;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  margin: 1.25rem 0 0.35rem;
+}
+
+h2 {
+  font-size: 1rem;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+a {
+  color: var(--accent);
 }
 
 .container {
-  max-width: 1280px;
+  max-width: 1320px;
   margin: 0 auto;
-  padding: 0 1rem 2rem;
+  padding: 0 1.25rem 3rem;
 }
 
+.muted {
+  color: var(--text-dim);
+  font-size: 0.875rem;
+}
+
+/* --- шапка --- */
 .topbar {
   display: flex;
-  align-items: baseline;
-  gap: 1rem;
-  padding: 0.75rem 1rem;
-  border-bottom: 1px solid #444;
-  margin-bottom: 1rem;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.7rem 1.25rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0.5rem;
 }
 
 .logo {
-  font-weight: 700;
-  font-size: 1.1rem;
+  font-weight: 650;
+  font-size: 1rem;
+  letter-spacing: -0.01em;
   text-decoration: none;
   color: inherit;
+}
+
+.topbar .muted {
+  font-size: 0.8125rem;
 }
 
 .topbar-link {
   margin-left: auto;
-  color: inherit;
+  color: var(--text-dim);
   text-decoration: none;
-  border-bottom: 1px dotted #888;
+  font-size: 0.875rem;
+  padding: 0.3rem 0.6rem;
+  border-radius: var(--radius-sm);
 }
 
 .topbar-link:hover {
-  border-color: #2f7df6;
+  color: var(--text);
+  background: var(--surface-2);
 }
 
+/* --- элементы форм --- */
 button {
-  padding: 0.45rem 0.9rem;
-  border: 1px solid #666;
-  border-radius: 6px;
-  background: transparent;
-  color: inherit;
+  font: inherit;
+  font-size: 0.875rem;
+  padding: 0.4rem 0.75rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
   cursor: pointer;
+  transition: background 120ms, border-color 120ms;
 }
 
 button:hover:not(:disabled) {
-  border-color: #2f7df6;
+  background: var(--surface-2);
+  border-color: var(--text-faint);
 }
 
 button:disabled {
-  opacity: 0.4;
+  opacity: 0.45;
   cursor: default;
 }
 
+/* Главное действие экрана — ровно одно, поэтому оно единственное залитое */
+button.primary,
+button[type="submit"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+  font-weight: 550;
+}
+
+button.primary:hover:not(:disabled),
+button[type="submit"]:hover:not(:disabled) {
+  filter: brightness(1.08);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
 button.active {
-  background: #2f7df6;
-  border-color: #2f7df6;
-  color: #fff;
-}
-
-.button-link {
-  display: inline-block;
-  padding: 0.45rem 0.9rem;
-  border: 1px solid #666;
-  border-radius: 6px;
-  text-decoration: none;
-  color: inherit;
-}
-
-.button-link:hover {
-  border-color: #2f7df6;
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 input,
 select,
 textarea {
-  padding: 0.45rem;
-  border: 1px solid #666;
-  border-radius: 6px;
-  background: transparent;
-  color: inherit;
   font: inherit;
+  font-size: 0.875rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-faint);
 }
 
 input[type="number"] {
-  width: 4.5rem;
+  width: 5rem;
 }
 
-.lang-input {
-  width: 4rem;
-}
-
-.config-input {
-  min-width: 280px;
-  flex: 1;
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 kbd {
-  border: 1px solid #777;
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  line-height: 1;
+  padding: 0.2rem 0.35rem;
+  border: 1px solid var(--border-strong);
+  border-bottom-width: 2px;
   border-radius: 4px;
-  padding: 0 4px;
-  font-size: 0.75em;
+  background: var(--surface-2);
+  color: var(--text-dim);
 }
 
-/* --- projects --- */
+/* Экспорт — это ссылка (браузер должен скачать файл), но в ряду кнопок
+   она обязана выглядеть кнопкой, иначе читается как посторонний текст */
+.export-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.875rem;
+  padding: 0.4rem 0.75rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.export-link:hover {
+  background: var(--surface-2);
+  border-color: var(--text-faint);
+}
+
+.ann-list-card {
+  padding: 0.35rem;
+}
+
+.review-panel .hint {
+  margin: 0;
+}
+
+.button-link {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+/* --- панель инструментов --- */
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  margin-bottom: 1rem;
+}
+
+/* Группы отделяются линией, а не пустотой: иначе десяток контролов
+   читается как один длинный ряд без структуры */
+.toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding-left: 0.75rem;
+  margin-left: 0.25rem;
+  border-left: 1px solid var(--border);
+}
+
+.toolbar-group label {
+  font-size: 0.8125rem;
+  color: var(--text-dim);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.config-input {
+  flex: 1 1 16rem;
+  min-width: 12rem;
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+}
+
+.zoom-hint {
+  font-size: 0.75rem;
+  color: var(--text-faint);
+}
+
+/* --- сообщения --- */
+.error,
+.warning,
+.hint {
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.7rem;
+  font-size: 0.8125rem;
+  margin: 0.5rem 0;
+  overflow-wrap: anywhere;
+}
+
+.error {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
+}
+
+.warning {
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warn) 30%, transparent);
+}
+
+.hint {
+  color: var(--text-dim);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+
+/* --- список проектов --- */
 .project-form {
   display: flex;
   gap: 0.5rem;
-  margin: 1rem 0 2rem;
+  margin: 1rem 0;
 }
 
 .project-form input {
   flex: 1;
+  max-width: 26rem;
 }
 
 .project-list {
   list-style: none;
   padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.5rem;
 }
 
 .project-list li {
-  padding: 0.75rem;
-  border: 1px solid #666;
-  border-radius: 8px;
-  margin-bottom: 0.5rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition: border-color 120ms, box-shadow 120ms;
+}
+
+.project-list li:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-sm);
 }
 
 .project-list a {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  padding: 0.7rem 0.9rem;
   color: inherit;
+  text-decoration: none;
+  font-weight: 550;
 }
 
 /* --- классы проекта --- */
 .classes-panel {
-  border: 1px solid #555;
-  border-radius: 8px;
-  padding: 0.5rem 1rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.9rem 1rem;
   margin-bottom: 1rem;
+  box-shadow: var(--shadow-sm);
 }
 
 .classes-head {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 1rem;
+  margin-bottom: 0.5rem;
 }
 
-.classes-head h2 {
-  font-size: 1rem;
-  margin: 0.5rem 0;
-  flex: 1;
-}
-
-.hint {
-  margin: 0 0 0.75rem;
-  font-size: 0.85rem;
-  opacity: 0.75;
-  border-left: 3px solid #f0a020;
-  padding-left: 0.6rem;
-}
-
-.class-add,
-.class-bulk {
+.class-add {
   display: flex;
   align-items: flex-end;
   gap: 0.5rem;
-  flex-wrap: wrap;
+  margin: 0.75rem 0 0.5rem;
 }
 
 .class-add-label {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
-  font-size: 0.8rem;
-  opacity: 0.8;
+  font-size: 0.75rem;
+  color: var(--text-dim);
 }
 
 .class-add-label input {
-  min-width: 16rem;
+  width: 16rem;
+}
+
+.class-list {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+/* Класс — «фишка»: цвет, имя, горячая клавиша, удаление */
+.class-list li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.25rem 0.3rem 0.25rem 0.35rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+.class-color {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+  appearance: none;
+}
+
+.class-color::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.class-color::-webkit-color-swatch {
+  border: none;
+  border-radius: 50%;
+}
+
+.class-name {
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+}
+
+.class-remove {
+  border: none;
+  background: none;
+  padding: 0 0.2rem;
+  color: var(--text-faint);
+  line-height: 1;
+}
+
+.class-remove:hover:not(:disabled) {
+  background: none;
+  color: var(--danger);
 }
 
 .class-bulk {
   margin-top: 0.75rem;
-  align-items: flex-start;
 }
 
 .class-bulk textarea {
-  min-width: 20rem;
+  width: 100%;
+  max-width: 32rem;
+  font-family: var(--mono);
+  font-size: 0.8125rem;
   resize: vertical;
 }
 
 .class-bulk-actions {
   display: flex;
   gap: 0.5rem;
-  margin-top: 1.25rem;
+  margin-top: 0.5rem;
 }
 
-.class-list {
-  list-style: none;
-  padding: 0;
-  margin: 0.75rem 0 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.class-list li {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  border: 1px solid #555;
-  border-radius: 999px;
-  padding: 0.2rem 0.5rem 0.2rem 0.3rem;
-}
-
-.class-color {
-  width: 1.5rem;
-  height: 1.5rem;
-  padding: 0;
-  border: none;
-  border-radius: 50%;
-  background: transparent;
-  cursor: pointer;
-}
-
-.class-name {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-}
-
-.class-remove {
-  padding: 0 0.3rem;
-  border: none;
-  opacity: 0.6;
-  line-height: 1;
-}
-
-.class-remove:hover:not(:disabled) {
-  opacity: 1;
-  color: #e05252;
-}
-
-/* --- project page --- */
-.toolbar {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-  margin-bottom: 0.75rem;
-}
-
-.toolbar-group {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding-left: 0.75rem;
-  border-left: 1px solid #555;
-}
-
+/* --- сетка изображений --- */
 .image-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
   gap: 0.75rem;
+  margin-top: 0.75rem;
 }
 
 .image-card {
-  border: 1px solid #555;
-  border-radius: 8px;
+  display: block;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
   overflow: hidden;
   text-decoration: none;
   color: inherit;
+  transition: border-color 120ms, box-shadow 120ms, transform 120ms;
 }
 
 .image-card:hover {
-  border-color: #2f7df6;
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow);
+  transform: translateY(-1px);
 }
 
-.image-card img,
-.thumb-loading {
-  width: 100%;
-  height: 140px;
-  object-fit: cover;
+.image-card img {
   display: block;
-  background: #3333;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  background: var(--surface-2);
 }
 
 .image-card-info {
-  padding: 0.4rem 0.6rem;
-  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.6rem;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  border-top: 1px solid var(--border);
 }
 
 .badge-pending {
-  color: #f0a020;
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  color: var(--warn);
+  font-weight: 600;
 }
 
-/* --- review page --- */
+.thumb-loading {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  background: linear-gradient(
+    100deg,
+    var(--surface-2) 30%,
+    var(--border) 50%,
+    var(--surface-2) 70%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite linear;
+}
+
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* --- ревью --- */
 .review-layout {
   display: grid;
-  grid-template-columns: 1fr 340px;
+  grid-template-columns: minmax(0, 1fr) 300px;
   gap: 1rem;
   align-items: start;
 }
 
+@media (max-width: 900px) {
+  .review-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Холст — главный объект экрана.
+   КРИТИЧНО: холст обтягивает картинку по размеру. SVG с рамками лежит
+   inset:0 поверх холста, а пересчёт координат мыши линейный — если холст
+   окажется шире картинки (например при object-fit: contain), рамки при
+   перетаскивании поедут. Поэтому width: fit-content, а не 100%. */
 .review-canvas {
   position: relative;
-  line-height: 0;
-  border: 1px solid #555;
-  border-radius: 8px;
+  width: fit-content;
+  max-width: 100%;
+  margin-inline: auto;
+  background: #0b0d10;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
   overflow: hidden;
+  line-height: 0;
 }
 
 .review-canvas img {
-  width: 100%;
-  user-select: none;
+  display: block;
+  max-width: 100%;
+  max-height: calc(100vh - 200px);
+  width: auto;
+  height: auto;
 }
 
 .review-canvas svg {
@@ -322,227 +605,253 @@ kbd {
   inset: 0;
   width: 100%;
   height: 100%;
+  touch-action: none;
 }
 
 .review-canvas svg.drawing {
   cursor: crosshair;
 }
 
-.draft-rect {
-  stroke: #2f7df6;
-  stroke-width: 1.5;
-  vector-effect: non-scaling-stroke;
-  fill: #2f7df622;
+.review-canvas svg.panning {
+  cursor: grabbing;
 }
 
-/* подпись класса у рамки: обводка вместо подложки — читается на любом фото */
 .box-label {
+  font-weight: 700;
   paint-order: stroke;
-  stroke: #000000cc;
-  stroke-width: 3;
+  stroke: rgb(0 0 0 / 55%);
+  stroke-width: 3px;
   stroke-linejoin: round;
-  vector-effect: non-scaling-stroke;
-  pointer-events: none;
-  font-weight: 600;
 }
 
-/* --- легенда классов --- */
-.class-legend {
-  border: 1px solid #555;
-  border-radius: 8px;
-  padding: 0.5rem 0.75rem 0.75rem;
-  margin-bottom: 1rem;
+.box-handle {
+  stroke: #fff;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.draft-rect {
+  fill: rgb(47 111 235 / 18%);
+  stroke-dasharray: 5 3;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.review-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  position: sticky;
+  top: 0.75rem;
+}
+
+.class-legend,
+.editor,
+.review-panel .hint,
+.ann-list-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.7rem 0.8rem;
 }
 
 .class-legend-head {
-  font-size: 0.85rem;
-  margin-bottom: 0.4rem;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  margin-bottom: 0.5rem;
 }
 
 .class-legend ul {
   list-style: none;
   padding: 0;
   margin: 0;
-  max-height: 30vh;
-  overflow-y: auto;
+  display: grid;
+  gap: 0.15rem;
 }
 
 .class-legend li {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  padding: 0.25rem 0.4rem;
-  border-radius: 6px;
+  gap: 0.5rem;
+  padding: 0.25rem 0.35rem;
+  border-radius: var(--radius-sm);
   cursor: pointer;
+  font-size: 0.8125rem;
 }
 
 .class-legend li:hover {
-  background: #8882;
+  background: var(--surface-2);
 }
 
 .class-legend li.active {
-  background: #2f7df633;
-  outline: 1px solid #2f7df6;
-}
-
-.class-legend .class-name {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  background: var(--accent-soft);
 }
 
 .class-dot {
-  width: 0.8rem;
-  height: 0.8rem;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   flex: none;
+}
+
+.editor-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  margin-bottom: 0.5rem;
 }
 
 .editor-field {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
-  font-size: 0.8rem;
-  opacity: 0.85;
+  font-size: 0.75rem;
+  color: var(--text-dim);
 }
 
-.editor-field select {
+.editor-field select,
+.editor textarea {
   width: 100%;
-}
-
-.review-panel {
-  position: sticky;
-  top: 1rem;
-}
-
-.editor {
-  border: 1px solid #555;
-  border-radius: 8px;
-  padding: 0.75rem;
-  margin-bottom: 1rem;
-}
-
-.editor-meta {
-  font-size: 0.85rem;
-  margin-bottom: 0.5rem;
 }
 
 .editor textarea {
-  width: 100%;
-  box-sizing: border-box;
+  font-family: var(--mono);
+  font-size: 0.8125rem;
   resize: vertical;
 }
 
 .editor-actions {
   display: flex;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
 }
 
+.editor-actions button {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+}
+
+/* Очередь: сначала самые неуверенные — там польза от человека наибольшая */
 .ann-list {
   list-style: none;
   padding: 0;
   margin: 0;
-  max-height: 60vh;
+  display: grid;
+  gap: 0.1rem;
+  max-height: 40vh;
   overflow-y: auto;
 }
 
 .ann-list li {
-  padding: 0.45rem 0.6rem;
-  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.4rem;
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  font-size: 0.8125rem;
 }
 
 .ann-list li:hover {
-  background: #8882;
+  background: var(--surface-2);
 }
 
 .ann-list li.selected {
-  background: #2f7df633;
-  outline: 1px solid #2f7df6;
+  background: var(--accent-soft);
 }
 
 .ann-conf {
-  display: inline-block;
-  min-width: 2.6rem;
-  text-align: right;
-  opacity: 0.75;
+  font-family: var(--mono);
+  font-size: 0.75rem;
   font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+  flex: none;
 }
 
-/* --- settings page --- */
+.ann-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- настройки --- */
 .settings-page {
-  max-width: 720px;
+  max-width: 44rem;
 }
 
 .settings-section {
-  border: 1px solid #555;
-  border-radius: 8px;
-  padding: 0.75rem 1rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.9rem 1rem;
   margin-bottom: 1rem;
 }
 
 .settings-section h2 {
-  font-size: 1rem;
-  margin: 0.25rem 0 0.5rem;
+  margin-bottom: 0.5rem;
 }
 
 .settings-form {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-end;
   gap: 0.75rem;
-  flex-wrap: wrap;
-  margin-top: 0.75rem;
 }
 
 .settings-form label {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
-  font-size: 0.85rem;
-  opacity: 0.8;
+  font-size: 0.75rem;
+  color: var(--text-dim);
 }
 
 .settings-form input {
-  min-width: 16rem;
+  width: 15rem;
+  font-family: var(--mono);
+  font-size: 0.8125rem;
 }
 
 .gpu-status {
-  border-left: 3px solid #666;
-  padding: 0.1rem 0 0.1rem 0.75rem;
-  margin-bottom: 0.75rem;
-}
-
-.gpu-status-title {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  font-weight: 600;
+  font-size: 0.875rem;
+  padding: 0.5rem 0.7rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border-left: 3px solid var(--border-strong);
+}
+
+.gpu-status-title {
+  font-weight: 550;
 }
 
 .gpu-status-ready {
-  border-color: #3aa76d;
+  border-left-color: var(--ok);
 }
 
 .gpu-status-deploying {
-  border-color: #f0a020;
+  border-left-color: var(--accent);
 }
 
 .gpu-status-failed {
-  border-color: #e05252;
+  border-left-color: var(--danger);
 }
 
 .spinner {
-  width: 0.9rem;
-  height: 0.9rem;
-  border: 2px solid #8886;
-  border-top-color: #2f7df6;
+  width: 13px;
+  height: 13px;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--accent);
   border-radius: 50%;
-  animation: spin 0.8s linear infinite;
+  animation: spin 0.7s linear infinite;
+  flex: none;
 }
 
 @keyframes spin {
@@ -551,28 +860,9 @@ kbd {
   }
 }
 
-.warning {
-  color: #f0a020;
-}
-
-.error {
-  color: #e05252;
-}
-
-.muted {
-  opacity: 0.6;
-}
-
-/* --- редактор боксов --- */
-.review-canvas svg.panning { cursor: grabbing; }
-
-.box-handle {
-  stroke: #fff;
-  stroke-width: 1;
-  vector-effect: non-scaling-stroke;
-}
-
-.zoom-hint {
-  font-size: 12px;
-  opacity: 0.7;
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

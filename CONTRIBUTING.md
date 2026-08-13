@@ -7,6 +7,9 @@ cp .env.example .env
 docker compose up -d --build   # dev: Vite HMR + uvicorn --reload
 ```
 
+(Users who only want to *run* AutoLabelUi do not build anything — they pull
+published images with `docker-compose.ghcr.yml`. See the README quickstart.)
+
 `docker-compose.yml` holds the release configuration (static bundle behind
 nginx); `docker-compose.override.yml` is applied automatically and turns it
 into the dev setup. To check the release build locally, exclude the override:
@@ -56,6 +59,56 @@ The test suite is still being established (pytest for `server/` and
 Plugins that need a GPU should not run in the worker — expose them behind an
 OpenAI-compatible API or the HTTP-labeler convention (`labelers/http`), and
 add a Modal recipe under `deploy/modal/` if you want a one-command deploy.
+
+## Releasing images
+
+`.github/workflows/publish.yml` builds and pushes to GHCR:
+
+| Image | Contents | Built from |
+|---|---|---|
+| `autolabelui-server` | `api` and `worker` — same image, different commands | `server/Dockerfile`, context = repo root |
+| `autolabelui-web` | static bundle behind nginx | `web/Dockerfile`, target `prod` |
+
+Both are multi-arch (`linux/amd64`, `linux/arm64`). Tags:
+
+- push to `main` → `latest` and `sha-<short>`
+- tag `v0.2.0` → `0.2.0`, `0.2` and `sha-<short>` (`latest` stays on `main`)
+
+Cutting a release is one command:
+
+```bash
+git tag -a v0.2.0 -m v0.2.0 && git push origin v0.2.0
+```
+
+**Before the very first publish, replace the `OWNER` placeholder** — until you
+do, the README quickstart is a dead link and the compose file points at an image
+that does not exist:
+
+```bash
+grep -rn OWNER README.md docker-compose.ghcr.yml
+sed -i '' 's|OWNER|your-account-lowercase|g' README.md docker-compose.ghcr.yml
+```
+
+GHCR rejects capitals in image names, so lowercase it even if your account has
+them.
+
+Things worth knowing before the first publish:
+
+- **The packages are created private.** After the first green run, open the
+  repository's Packages, and set both to public — otherwise every `docker
+  compose -f docker-compose.ghcr.yml up -d` fails with `denied`. The workflow
+  labels images with `org.opencontainers.image.source`, so GitHub links them to
+  this repository on its own.
+- **arm64 is emulated with QEMU and dominates the wall clock.** For a quick
+  check, run the workflow from the Actions tab (`workflow_dispatch`) with
+  `platforms = linux/amd64`. If the repository is public, moving arm64 onto
+  native `ubuntu-24.04-arm` runners is the real fix — see the comment in the
+  workflow.
+- **Layer cache is the GitHub Actions cache**, scoped per image, and the
+  repository quota is 10 GB. Evicted cache means a slow cold build, nothing
+  worse.
+- A new labeler plugin only reaches users once a new image is published: the
+  plugins are installed into the image at build time.
 
 ## Style
 

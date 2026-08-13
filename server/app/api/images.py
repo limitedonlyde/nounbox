@@ -8,7 +8,7 @@ from starlette.concurrency import run_in_threadpool
 from app import storage
 from app.db import get_session
 from app.models import Annotation, AnnotationStatus, Document, Image
-from app.schemas import ImageOut, ImageWithStats
+from app.schemas import ImageOut, ImageUpdate, ImageWithStats
 
 router = APIRouter(tags=["images"])
 
@@ -69,3 +69,24 @@ async def get_image_url(image_id: uuid.UUID, session: AsyncSession = Depends(get
         raise HTTPException(404, "Image not found")
     url = await run_in_threadpool(storage.presigned_url, image.s3_key)
     return {"url": url}
+
+
+@router.patch("/images/{image_id}", response_model=ImageOut)
+async def update_image(
+    image_id: uuid.UUID,
+    body: ImageUpdate,
+    session: AsyncSession = Depends(get_session),
+):
+    """Пометить кадр просмотренным.
+
+    Единственный способ сказать «я смотрел, объектов тут нет»: у такого кадра
+    нет ни одной аннотации, поэтому иначе он неотличим от неразмеченного и в
+    датасет как фоновый пример не попадёт.
+    """
+    image = await session.get(Image, image_id)
+    if image is None:
+        raise HTTPException(404, "Image not found")
+    image.reviewed = body.reviewed
+    await session.commit()
+    await session.refresh(image)
+    return image

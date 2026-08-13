@@ -105,9 +105,16 @@ class ImageOut(BaseModel):
     height: int
     content_hash: str | None
     blur_score: float | None
+    # человек подтвердил, что смотрел кадр: нужно, чтобы кадр БЕЗ объектов
+    # попал в датасет как фоновый пример, а не потерялся
+    reviewed: bool
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class ImageUpdate(BaseModel):
+    reviewed: bool
 
 
 class ImageWithStats(ImageOut):

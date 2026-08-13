@@ -310,6 +310,7 @@ function ProjectPage() {
           </label>
         )}
         <button
+          className="primary"
           onClick={() => void autolabel()}
           disabled={
             busy ||
@@ -378,7 +379,7 @@ the ones you accepted or fixed stay"
             ))}
           </select>
           <a
-            className="button-link"
+            className="export-link"
             href={`/api/v1/projects/${projectId}/export?format=${exportFormat}`}
           >
             Export ⤓
@@ -402,7 +403,7 @@ the ones you accepted or fixed stay"
           >
             <Thumb imageId={img.id} />
             <div className="image-card-info">
-              page {img.page_index + 1} · ann.: {img.total_annotations}
+              page {img.page_index + 1} · {img.total_annotations} boxes
               {img.pending_annotations > 0 && (
                 <span className="badge-pending"> {img.pending_annotations} ⏳</span>
               )}

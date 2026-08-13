@@ -159,5 +159,86 @@ def test_inputs_not_mutated():
 
 def test_text_similarity_normalization():
     assert text_similarity("Hello  World", "hello world") == pytest.approx(1.0)
-    assert text_similarity(None, None) == pytest.approx(1.0)
-    assert text_similarity("abc", None) == pytest.approx(0.0)
+    # текста нет ни у одной стороны — сравнивать нечего, а не «идеально совпало»
+    assert text_similarity(None, None) is None
+    assert text_similarity("", "  ") is None
+    # у одной стороны текста нет: движок его и не обещал (детектор без OCR)
+    assert text_similarity("abc", None) is None
+
+
+# --- сопоставление учитывает класс (detection) ---
+def det(x, y, w, h, label):
+    """Аннотация детекции: класс есть, текста нет."""
+    return Annotation(geometry=BBox(x=x, y=y, width=w, height=h), label=label)
+
+
+def test_boxes_of_different_labels_never_merge():
+    # диван и собака перекрываются почти полностью — но это разные объекты
+    merged = merge({"owlv2": [det(0, 0, 100, 100, "dog")], "dino": [det(2, 2, 98, 98, "sofa")]})
+    by_label = {m.label: m for m in merged}
+    assert set(by_label) == {"dog", "sofa"}
+    assert by_label["dog"].confidence == pytest.approx(0.45)  # primary без пары
+    assert by_label["sofa"].confidence == pytest.approx(0.35)  # secondary без пары
+    assert by_label["dog"].attrs["consensus"]["engines"] == ["owlv2"]
+    assert by_label["sofa"].attrs["consensus"]["engines"] == ["dino"]
+
+
+def test_same_label_still_matches():
+    merged = merge({"owlv2": [det(0, 0, 100, 100, "dog")], "dino": [det(2, 2, 98, 98, "dog")]})
+    assert len(merged) == 1
+    assert merged[0].attrs["consensus"]["engines"] == ["owlv2", "dino"]
+
+
+def test_label_match_ignores_case_and_extra_spaces():
+    merged = merge(
+        {"a": [det(0, 0, 100, 100, "coffee table")], "b": [det(0, 0, 100, 100, "Coffee  Table")]}
+    )
+    assert len(merged) == 1
+    assert merged[0].label == "coffee table"  # label primary остаётся как есть
+
+
+def test_match_prefers_same_label_over_better_iou():
+    # у чужого класса IoU выше, но пару должен получить бокс своего класса
+    merged = merge(
+        {
+            "owlv2": [det(0, 0, 100, 100, "dog")],
+            "dino": [det(0, 0, 100, 100, "sofa"), det(0, 20, 100, 100, "dog")],
+        }
+    )
+    by_label = {m.label: [x for x in merged if x.label == m.label] for m in merged}
+    assert len(by_label["dog"]) == 1
+    assert by_label["dog"][0].attrs["consensus"]["engines"] == ["owlv2", "dino"]
+    assert by_label["sofa"][0].confidence == pytest.approx(0.35)
+
+
+# --- confidence детекции: текста нет, шкала геометрическая ---
+def test_detection_agreement_is_not_scored_as_perfect_text_match():
+    merged = merge({"owlv2": [det(0, 0, 100, 100, "dog")], "dino": [det(0, 0, 100, 100, "dog")]})
+    assert len(merged) == 1
+    consensus = merged[0].attrs["consensus"]
+    assert consensus["text_similarity"] is None  # неприменимо, а не 1.0
+    assert consensus["iou"] == pytest.approx(1.0)
+    # геометрическая шкала: потолок СТРОГО ниже дефолтного порога bulk-accept
+    # (0.9), иначе согласие одних рамок принималось бы пачкой без человека
+    assert merged[0].confidence == pytest.approx(0.89)
+    assert merged[0].confidence < 0.9
+
+
+def test_detection_confidence_scales_with_geometry_agreement():
+    tight = merge({"a": [det(0, 0, 100, 100, "dog")], "b": [det(0, 5, 100, 100, "dog")]})
+    loose = merge({"a": [det(0, 0, 100, 100, "dog")], "b": [det(0, 40, 100, 100, "dog")]})
+    assert len(tight) == len(loose) == 1
+    assert 0.6 <= loose[0].confidence < tight[0].confidence <= 0.9
+
+
+def test_text_from_one_engine_only_is_not_a_disagreement():
+    # OCR дал текст, детектор — нет: сравнивать нечего, а не «тексты разошлись»
+    merged = merge(
+        {
+            "paddleocr": [ann(0, 0, 100, 20, "Total: 42")],
+            "detector": [ann(0, 0, 100, 20)],
+        }
+    )
+    assert len(merged) == 1
+    assert merged[0].attrs["consensus"]["text_similarity"] is None
+    assert merged[0].confidence > 0.55 + 0.35 * 0.0

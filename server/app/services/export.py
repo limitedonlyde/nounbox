@@ -4,6 +4,14 @@
 pending/rejected в датасет не попадают. Каждый экспорт содержит manifest.json
 (snapshot-версия датасета: task_type, классы, счётчики).
 
+В датасет идут и проверенные кадры без единой рамки: для детектора это
+негативные (фоновые) примеры, они снижают ложные срабатывания, и YOLO их ест
+штатно (пустой .txt рядом с картинкой), COCO — записью в images без
+аннотаций. Проверенным считается кадр, у которого есть хотя бы одна
+аннотация в статусе accepted/edited/rejected либо выставлен Image.reviewed;
+непросмотренные кадры не попадают в датасет вообще — иначе неразмеченный
+объект уехал бы в обучение как фон.
+
 Набор форматов зависит от Project.task_type:
 
 detection
@@ -35,6 +43,13 @@ from PIL import Image as PILImage
 from app.models import Annotation, AnnotationStatus, Image
 
 EXPORTABLE_STATUSES = (AnnotationStatus.ACCEPTED, AnnotationStatus.EDITED)
+# статусы, доказывающие, что кадр смотрел человек (rejected — тоже решение
+# человека: рамка была, её убрали)
+REVIEWED_STATUSES = (
+    AnnotationStatus.ACCEPTED,
+    AnnotationStatus.EDITED,
+    AnnotationStatus.REJECTED,
+)
 
 TaskType = Literal["detection", "ocr"]
 ExportFormat = Literal["yolo_detect", "coco", "paddleocr_det", "paddleocr_rec"]
@@ -62,7 +77,11 @@ def formats_for(task_type: str | None) -> tuple[str, ...]:
 
 
 class ExportItem:
-    """Изображение + его байты (PNG после ingest) + проверенные аннотации."""
+    """Изображение + его байты (PNG после ingest) + проверенные аннотации.
+
+    Пустой список аннотаций легален: проверенный кадр без объектов — фоновый
+    пример датасета.
+    """
 
     def __init__(self, image: Image, data: bytes, annotations: list[Annotation]):
         self.image = image
@@ -126,6 +145,9 @@ def _write_common(zf: zipfile.ZipFile, items: list[ExportItem]) -> None:
 def _build_det(
     zf: zipfile.ZipFile, items: list[ExportItem], ctx: ExportContext
 ) -> dict[str, Any]:
+    # фоновые кадры полезны детектору, но не OCR: загрузчик PaddleOCR
+    # выбрасывает записи с нулём боксов, в датасете от них только мусор
+    items = [i for i in items if i.annotations]
     _write_common(zf, items)
     lines = []
     count = 0
@@ -137,12 +159,13 @@ def _build_det(
         count += len(entries)
         lines.append(f"{_image_name(index)}\t{json.dumps(entries, ensure_ascii=False)}")
     zf.writestr("label.txt", "\n".join(lines))
-    return {"annotations": count}
+    return {"annotations": count, "images_written": len(items)}
 
 
 def _build_rec(
     zf: zipfile.ZipFile, items: list[ExportItem], ctx: ExportContext
 ) -> dict[str, Any]:
+    items = [i for i in items if i.annotations]
     _write_common(zf, items)
     lines = []
     count = 0
@@ -162,7 +185,7 @@ def _build_rec(
             lines.append(f"{name}\t{_flatten_ws(a.text)}")
             count += 1
     zf.writestr("label.txt", "\n".join(lines))
-    return {"annotations": count}
+    return {"annotations": count, "images_written": len(items)}
 
 
 # --- yolo (detection) ---
@@ -290,6 +313,7 @@ def _build_yolo(
     zf.writestr("data.yaml", _data_yaml(ctx.classes))
     return {
         "annotations": count,
+        "images_written": images["train"] + images["val"],
         "train_images": images["train"],
         "val_images": images["val"],
     }
@@ -365,7 +389,7 @@ def _build_coco(
                 }
             coco["annotations"].append(entry)
     zf.writestr("annotations.json", json.dumps(coco, ensure_ascii=False, indent=1))
-    return {"annotations": ann_id}
+    return {"annotations": ann_id, "images_written": len(items)}
 
 
 _BUILDERS = {
@@ -393,7 +417,9 @@ def build_zip(
             f"Available: {', '.join(available)}"
         )
     if not items:
-        raise ExportError("No verified annotations to export")
+        raise ExportError(
+            "No reviewed images to export: review images before exporting"
+        )
     # в detection и class_idx (YOLO), и category_id (COCO) — это позиция в списке
     # классов проекта, без него экспортировать нечего
     if task_type == "detection" and not classes:
@@ -405,8 +431,14 @@ def build_zip(
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
         stats = _BUILDERS[fmt](zf, items, ctx)
-        if stats["annotations"] == 0:
-            raise ExportError(f"Nothing to export in format {fmt}")
+        # Пустой ZIP отдавать нельзя, но «ноль рамок» — не то же самое, что
+        # «нечего отдавать»: датасет из одних проверенных фоновых кадров
+        # осмысленен для детектора. Отказываем, только если в архив вообще
+        # не попало ни одного кадра.
+        if stats.get("images_written", len(items)) == 0:
+            raise ExportError(
+                f"Nothing to export in format {fmt}: review some images first"
+            )
         manifest = {
             "generator": "autolabelui",
             "generator_version": "0.1.0",
@@ -416,6 +448,8 @@ def build_zip(
             "classes": list(ctx.classes),
             "created_at": datetime.now(timezone.utc).isoformat(),
             "images": len(items),
+            # проверенные кадры без объектов — негативные примеры
+            "background_images": sum(1 for item in items if not item.annotations),
             "statuses_included": list(EXPORTABLE_STATUSES),
             "skipped_labels": ctx.skipped_labels,
             **stats,

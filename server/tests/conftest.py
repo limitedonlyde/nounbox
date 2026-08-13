@@ -18,6 +18,7 @@ os.environ["SETTINGS_KEY_PATH"] = str(TMP / "settings.key")
 os.environ.pop("SETTINGS_ENCRYPTION_KEY", None)
 
 from httpx import ASGITransport, AsyncClient  # noqa: E402
+from sqlalchemy import event  # noqa: E402
 from sqlalchemy.dialects.postgresql import JSONB, UUID  # noqa: E402
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine  # noqa: E402
 from sqlalchemy.ext.compiler import compiles  # noqa: E402
@@ -57,6 +58,15 @@ async def session_factory(tmp_path, monkeypatch):
     engine = create_async_engine(
         f"sqlite+aiosqlite:///{tmp_path / 'test.db'}", poolclass=NullPool
     )
+
+    # sqlite по умолчанию не проверяет внешние ключи, а postgres проверяет:
+    # без этого тесты не заметили бы ни осиротевших строк, ни IntegrityError
+    @event.listens_for(engine.sync_engine, "connect")
+    def _enforce_foreign_keys(dbapi_connection, _record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
     factory = async_sessionmaker(engine, expire_on_commit=False)
     monkeypatch.setattr(db, "engine", engine)
     monkeypatch.setattr(db, "SessionLocal", factory)
