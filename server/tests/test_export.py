@@ -348,6 +348,41 @@ def test_paddleocr_rec_crops():
     assert "crops/00001_000.png" in zf.namelist()
 
 
+def test_paddleocr_rec_refuses_export_when_no_crop_survives():
+    """Boxes without text produce no crops — that is an empty dataset, not an export.
+
+    The frames here have annotations, so nothing filters them out earlier; every
+    box is dropped inside the builder instead. Counting them as written would
+    walk the guard in build_zip straight past a ZIP with an empty label.txt.
+    """
+    image = make_image(200, 100)
+    annotations = [
+        bbox_ann("text_line", 10, 10, 50, 20),  # no text
+        bbox_ann("text_line", 10, 10, 1, 1, text="x"),  # crop under 2 px
+    ]
+    with pytest.raises(export_service.ExportError, match="Nothing to export"):
+        export_service.build_zip(
+            "paddleocr_rec", [item(image, annotations)], "p", "ocr", ()
+        )
+
+
+def test_paddleocr_rec_counts_only_frames_that_yielded_crops():
+    good = make_image(200, 100)
+    empty = make_image(200, 100)
+    zf = build(
+        "paddleocr_rec",
+        [
+            item(good, [bbox_ann("text_line", 10, 10, 50, 20, text="hi")]),
+            item(empty, [bbox_ann("text_line", 10, 10, 50, 20)]),  # no text
+        ],
+        task_type="ocr",
+        classes=(),
+    )
+    manifest = json.loads(zf.read("manifest.json"))
+    assert manifest["images_written"] == 1
+    assert manifest["annotations"] == 1
+
+
 def test_manifest_lists_classes_and_task_type():
     image = make_image(100, 100)
     zf = build("yolo_detect", [item(image, [bbox_ann("carpet", 0, 0, 50, 50)])])
@@ -397,3 +432,45 @@ def test_coco_lists_background_frame_in_images():
     coco = json.loads(zf.read("annotations.json"))
     assert [entry["id"] for entry in coco["images"]] == [1, 2]
     assert [entry["image_id"] for entry in coco["annotations"]] == [1]
+    manifest = json.loads(zf.read("manifest.json"))
+    assert manifest["images"] == 2
+    assert manifest["background_images"] == 1
+
+
+# --- manifest counts describe the archive, not the selection ---
+@pytest.mark.parametrize("fmt", ["paddleocr_det", "paddleocr_rec"])
+def test_manifest_counts_skip_frames_the_ocr_builder_drops(fmt):
+    """The PaddleOCR builders throw background frames away; a manifest counted
+    off the incoming selection would promise images the ZIP does not have."""
+    items = [
+        item(make_image(200, 100), [bbox_ann("text_line", 10, 10, 50, 20, text="Да")]),
+        item(make_image(200, 100), []),
+        item(make_image(200, 100), []),
+    ]
+    zf = build(fmt, items, task_type="ocr", classes=())
+    manifest = json.loads(zf.read("manifest.json"))
+
+    assert [n for n in zf.namelist() if n.startswith("images/")] == ["images/00001.png"]
+    assert manifest["images"] == 1
+    assert manifest["images_written"] == 1
+    assert manifest["background_images"] == 0
+    assert zf.read("label.txt").decode().count("\n") == 0  # one entry, no blanks
+
+
+def test_yolo_counts_frame_left_empty_by_skipped_labels_as_background():
+    kept, all_skipped = make_image(100, 100), make_image(100, 100)
+    zf = build(
+        "yolo_detect",
+        [
+            item(kept, [bbox_ann("carpet", 10, 10, 20, 20)]),
+            item(all_skipped, [bbox_ann("lamp", 10, 10, 20, 20)]),  # class deleted
+        ],
+    )
+    # only an empty .txt was written for it — in the dataset that is a negative
+    # example, whatever the annotation list of the frame said
+    labels = [n for n in _files_of(zf, all_skipped) if n.startswith("labels/")]
+    assert labels and all(zf.read(n) == b"" for n in labels)
+    manifest = json.loads(zf.read("manifest.json"))
+    assert manifest["images"] == 2
+    assert manifest["background_images"] == 1
+    assert manifest["skipped_labels"] == {"lamp": 1}

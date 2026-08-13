@@ -140,8 +140,17 @@ def model_dir() -> str:
 
 
 def max_pixels(config: dict) -> int:
-    """Image area limit: config -> env -> default."""
-    raw = config.get("max_pixels") or os.environ.get(ENV_MAX_PIXELS) or DEFAULT_MAX_PIXELS
+    """Image area limit: config -> env -> default.
+
+    Every source is resolved by PRESENCE, not truthiness: max_pixels=0 in the
+    config is set, and has to reach the check below instead of silently falling
+    through to the env var and passing as the default. An unset env var and an
+    empty one are the same thing, but "0" in it is a value and gets rejected.
+    """
+    raw = config.get("max_pixels")
+    if raw is None:
+        env = os.environ.get(ENV_MAX_PIXELS, "").strip()
+        raw = env if env else DEFAULT_MAX_PIXELS
     value = int(raw)
     if value <= 0:
         raise ValueError(f"rapidocr: max_pixels must be positive, got {value}")

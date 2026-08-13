@@ -206,6 +206,30 @@ def test_max_pixels_rejects_nonpositive():
         mod.max_pixels({"max_pixels": -1})
 
 
+def test_max_pixels_zero_in_config_is_rejected_not_ignored(monkeypatch):
+    """0 is a SET value, not a missing key — it hits the guard, not the env/default."""
+    monkeypatch.setenv(mod.ENV_MAX_PIXELS, "123")
+    with pytest.raises(ValueError, match="must be positive"):
+        mod.max_pixels({"max_pixels": 0})
+    monkeypatch.delenv(mod.ENV_MAX_PIXELS)
+    with pytest.raises(ValueError, match="must be positive"):
+        mod.max_pixels({"max_pixels": 0})
+
+
+def test_max_pixels_zero_in_env_is_rejected(monkeypatch):
+    monkeypatch.setenv(mod.ENV_MAX_PIXELS, "0")
+    with pytest.raises(ValueError, match="must be positive"):
+        mod.max_pixels({})
+
+
+def test_max_pixels_unset_returns_default(monkeypatch):
+    """Nothing set anywhere — and a blank env var counts as nothing set."""
+    monkeypatch.delenv(mod.ENV_MAX_PIXELS, raising=False)
+    assert mod.max_pixels({}) == mod.DEFAULT_MAX_PIXELS
+    monkeypatch.setenv(mod.ENV_MAX_PIXELS, "   ")
+    assert mod.max_pixels({}) == mod.DEFAULT_MAX_PIXELS
+
+
 def test_predict_rejects_garbage_before_loading_model(monkeypatch):
     def boom(rec_lang):
         raise AssertionError("engine must not be loaded for undecodable input")

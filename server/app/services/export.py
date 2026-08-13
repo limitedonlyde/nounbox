@@ -159,7 +159,12 @@ def _build_det(
         count += len(entries)
         lines.append(f"{_image_name(index)}\t{json.dumps(entries, ensure_ascii=False)}")
     zf.writestr("label.txt", "\n".join(lines))
-    return {"annotations": count, "images_written": len(items)}
+    return {
+        "annotations": count,
+        "images": len(items),
+        "background_images": 0,  # the filter above left no empty frames
+        "images_written": len(items),
+    }
 
 
 def _build_rec(
@@ -169,8 +174,10 @@ def _build_rec(
     _write_common(zf, items)
     lines = []
     count = 0
+    frames_with_crops = 0
     for index, item in enumerate(items, start=1):
         pil = PILImage.open(io.BytesIO(item.data))
+        crops = 0
         for ann_index, a in enumerate(item.annotations):
             if not a.text:
                 continue  # the rec format needs text
@@ -184,8 +191,20 @@ def _build_rec(
             zf.writestr(name, buffer.getvalue())
             lines.append(f"{name}\t{_flatten_ws(a.text)}")
             count += 1
+            crops += 1
+        frames_with_crops += crops > 0
     zf.writestr("label.txt", "\n".join(lines))
-    return {"annotations": count, "images_written": len(items)}
+    return {
+        "annotations": count,
+        "images": len(items),
+        "background_images": 0,  # the filter above left no empty frames
+        # frames that actually yielded a crop — NOT len(items). Having boxes is
+        # not enough for this format: every one of them can be dropped for
+        # having no text or being under 2 px. If none survive, label.txt is
+        # empty and there are no crops, and build_zip must refuse the export
+        # instead of handing back a ZIP that looks fine and holds no dataset.
+        "images_written": frames_with_crops,
+    }
 
 
 # --- yolo (detection) ---
@@ -294,6 +313,7 @@ def _build_yolo(
     assigned = _assign_splits(stems)
     images = {"train": 0, "val": 0}
     count = 0
+    background = 0
     for stem, item in zip(stems, items):
         lines = []
         for a in item.annotations:
@@ -310,9 +330,15 @@ def _build_yolo(
             zf.writestr(f"labels/{split}/{stem}.txt", "\n".join(lines))
             images[split] += 1
         count += len(lines)
+        # an empty .txt is what makes the frame a negative example — whether it
+        # came in without boxes or lost them all to skipped labels/clipping
+        background += not lines
     zf.writestr("data.yaml", _data_yaml(ctx.classes))
     return {
         "annotations": count,
+        "images": len(items),
+        "background_images": background,
+        # a lone image is written into both splits, so this exceeds "images"
         "images_written": images["train"] + images["val"],
         "train_images": images["train"],
         "val_images": images["val"],
@@ -340,7 +366,9 @@ def _build_coco(
         "categories": categories,
     }
     ann_id = 0
+    background = 0
     for index, item in enumerate(items, start=1):
+        written = 0
         coco["images"].append(
             {
                 "id": index,
@@ -388,8 +416,16 @@ def _build_coco(
                     "source": (a.source or {}).get("name"),
                 }
             coco["annotations"].append(entry)
+            written += 1
+        # an entry in images with no annotations of its own — a negative example
+        background += not written
     zf.writestr("annotations.json", json.dumps(coco, ensure_ascii=False, indent=1))
-    return {"annotations": ann_id, "images_written": len(items)}
+    return {
+        "annotations": ann_id,
+        "images": len(items),
+        "background_images": background,
+        "images_written": len(items),
+    }
 
 
 _BUILDERS = {
@@ -447,11 +483,11 @@ def build_zip(
             "project_id": project_id,
             "classes": list(ctx.classes),
             "created_at": datetime.now(timezone.utc).isoformat(),
-            "images": len(items),
-            # reviewed frames without objects are the negative examples
-            "background_images": sum(1 for item in items if not item.annotations),
             "statuses_included": list(EXPORTABLE_STATUSES),
             "skipped_labels": ctx.skipped_labels,
+            # the counts (images, background_images, annotations, ...) come from
+            # the builder: a format may drop items that do not apply to it, and
+            # the manifest must describe the archive, not the selection
             **stats,
         }
         zf.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=1))
