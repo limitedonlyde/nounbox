@@ -1,0 +1,130 @@
+# Базовый файл — конфигурация для РЕЛИЗА: собранная статика за nginx,
+# без --reload и без монтирования исходников.
+#
+#   прод:         docker compose -f docker-compose.yml up -d --build
+#   разработка:   docker compose up -d --build
+#
+# Второй вариант автоматически подхватывает docker-compose.override.yml,
+# который возвращает dev-сервер Vite, --reload и live-код.
+name: autolabelui
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-autolabel}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-autolabel}
+      POSTGRES_DB: ${POSTGRES_DB:-autolabel}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-autolabel}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-autolabel}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-autolabel123}
+    ports:
+      # Браузер открывает presigned-ссылки на изображения НАПРЯМУЮ: подпись
+      # SigV4 включает хост и путь, поэтому проксировать MinIO под префиксом
+      # нельзя — подпись перестанет сходиться. При деплое не на localhost
+      # выставьте S3_PUBLIC_ENDPOINT_URL на адрес, доступный браузеру.
+      - "127.0.0.1:9000:9000"
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+      args:
+        # локальный PaddleOCR (гигабайты) — opt-in: WITH_PADDLE=1 docker compose build
+        WITH_PADDLE: ${WITH_PADDLE:-0}
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    env_file: .env
+    environment: &backend_env
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-autolabel}:${POSTGRES_PASSWORD:-autolabel}@postgres:5432/${POSTGRES_DB:-autolabel}
+      REDIS_URL: redis://redis:6379/0
+      S3_ENDPOINT_URL: http://minio:9000
+      S3_PUBLIC_ENDPOINT_URL: ${S3_PUBLIC_ENDPOINT_URL:-http://localhost:9000}
+      VLM_BASE_URL: ${VLM_BASE_URL:-http://host.docker.internal:11434/v1}
+      VLM_API_KEY: ${VLM_API_KEY:-ollama}
+      VLM_MODEL: ${VLM_MODEL:-qwen2.5vl:7b}
+    # порт наружу не публикуется: API доступен браузеру через nginx (/api)
+    volumes:
+      - appdata:/data  # ключ шифрования настроек (общий с worker'ом)
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+      args:
+        # дефолт — лёгкий образ без paddlepaddle/paddleocr: тяжёлый инференс
+        # уходит на Modal (кнопка «Подключить GPU»), локально работает rapidocr
+        WITH_PADDLE: ${WITH_PADDLE:-0}
+    command: arq app.workers.tasks.WorkerSettings
+    extra_hosts:
+      # доступ к Ollama/др. сервисам на хосте (Linux; на Mac/Win встроено)
+      - "host.docker.internal:host-gateway"
+    env_file: .env
+    environment: *backend_env
+    volumes:
+      - appdata:/data  # ключ шифрования настроек (общий с api)
+      - ocr-models:/root/.cache  # кеш весов движков (owlv2 ~620МБ), качаются один раз
+      - paddleocr-data:/root/.paddlex  # кеш моделей PaddleOCR (при WITH_PADDLE=1)
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ./web
+      target: prod
+    # тег явный: dev- и prod-цели собираются из одного Dockerfile, и без разных
+    # имён переключение режима молча переиспользовало бы чужой образ
+    image: autolabelui-web:prod
+    ports:
+      - "127.0.0.1:8080:80"
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  miniodata:
+  appdata:
+  ocr-models:
+  paddleocr-data:

@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "autolabel-labeler-owlv2"
+version = "0.1.0"
+description = "OWLv2 labeler for AutoLabelUi — open-vocabulary box detection on CPU (Apache-2.0 weights), the default detection engine"
+requires-python = ">=3.11"
+license = { text = "AGPL-3.0-only" }
+dependencies = [
+    "autolabelui-sdk",
+    "transformers>=4.57",
+    "torch>=2.2",
+    "Pillow>=10.0",
+    "numpy>=1.26",
+    # обработчик изображений OWLv2 требует scipy для сглаженного ресайза
+    # (requires_backends(self, "scipy") в transformers) — без него predict падает
+    "scipy>=1.11",
+]
+
+[project.entry-points."autolabelui.labelers"]
+owlv2 = "autolabel_labeler_owlv2:Owlv2Labeler"
+
+[tool.setuptools.packages.find]
+include = ["autolabel_labeler_owlv2*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-m 'not slow'"
+markers = [
+    "slow: прогон реальной модели (веса ~620 МБ, ~2 с на фото); запуск: pytest -m slow",
+]

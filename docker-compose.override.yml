@@ -1,0 +1,47 @@
+# Режим разработки. Compose подхватывает этот файл автоматически, поэтому
+#
+#   docker compose up -d --build
+#
+# поднимает стек с dev-сервером Vite, uvicorn --reload и live-кодом.
+# Для релизной конфигурации файл нужно исключить явно:
+#
+#   docker compose -f docker-compose.yml up -d --build
+services:
+  minio:
+    ports:
+      - "127.0.0.1:9001:9001"  # веб-консоль MinIO — только для разработки
+
+  api:
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    environment:
+      PYTHONPATH: /code  # смонтированный код важнее копии в site-packages
+    ports:
+      - "127.0.0.1:8000:8000"  # прямой доступ к API и /docs, минуя nginx
+    volumes:
+      - ./server:/code
+      - ./sdk:/sdk
+
+  worker:
+    environment:
+      PYTHONPATH: /code
+    volumes:
+      - ./server:/code
+      - ./sdk:/sdk
+      - ./labelers:/labelers  # live-код плагинов (editable install)
+
+  web:
+    build:
+      target: dev
+    image: autolabelui-web:dev
+    environment:
+      API_PROXY_TARGET: http://api:8000
+    # !override, а не слияние: иначе к 5173 добавился бы порт 8080 из базового
+    # файла, на котором в dev-режиме никто не слушает
+    ports: !override
+      - "127.0.0.1:5173:5173"
+    volumes:
+      - ./web:/app
+      - /app/node_modules  # изоляция от node_modules хоста (другая платформа)
+    depends_on:
+      api:
+        condition: service_started  # ждать healthcheck в разработке незачем

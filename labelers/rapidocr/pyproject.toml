@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "autolabel-labeler-rapidocr"
+version = "0.1.0"
+description = "RapidOCR labeler for AutoLabelUi — default CPU engine (onnxruntime, per-line polygons, real confidence)"
+requires-python = ">=3.11"
+license = { text = "AGPL-3.0-only" }
+# rapidocr в метаданных жёстко требует opencv-python; в образе он ставится
+# с --no-deps плюс opencv-python-headless (см. server/Dockerfile) — иначе
+# в site-packages лежат оба варианта opencv.
+dependencies = [
+    "autolabelui-sdk",
+    "rapidocr>=3.9",
+    "onnxruntime>=1.20",
+    "Pillow>=10.0",
+]
+
+[project.entry-points."autolabelui.labelers"]
+rapidocr = "autolabel_labeler_rapidocr:RapidOCRLabeler"
+
+[tool.setuptools.packages.find]
+include = ["autolabel_labeler_rapidocr*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-m 'not slow'"
+markers = [
+    "slow: прогон реальной модели (веса ~13.5 МБ, секунды на страницу); запуск: pytest -m slow",
+]
