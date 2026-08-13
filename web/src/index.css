@@ -562,3 +562,17 @@ kbd {
 .muted {
   opacity: 0.6;
 }
+
+/* --- редактор боксов --- */
+.review-canvas svg.panning { cursor: grabbing; }
+
+.box-handle {
+  stroke: #fff;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.zoom-hint {
+  font-size: 12px;
+  opacity: 0.7;
+}

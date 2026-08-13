@@ -24,6 +24,94 @@ const UNKNOWN_CLASS_COLOR = "#8a8a8a";
 
 type StatusFilter = "all" | AnnotationStatus;
 
+/** Видимая область в координатах изображения (зум = уменьшение w/h). */
+interface Viewport {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** Ручки: углы и середины сторон. */
+type Handle = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
+
+const HANDLES: Handle[] = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
+
+const HANDLE_CURSOR: Record<Handle, string> = {
+  nw: "nwse-resize",
+  se: "nwse-resize",
+  ne: "nesw-resize",
+  sw: "nesw-resize",
+  n: "ns-resize",
+  s: "ns-resize",
+  e: "ew-resize",
+  w: "ew-resize",
+};
+
+interface Box {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+type DragState =
+  | { mode: "resize"; id: string; handle: Handle; before: Box; box: Box }
+  | { mode: "move"; id: string; before: Box; box: Box; grab: { x: number; y: number } }
+  | { mode: "pan"; startPointer: { x: number; y: number }; startView: Viewport };
+
+interface GeometryEdit {
+  id: string;
+  before: Geometry;
+  after: Geometry;
+}
+
+/** Минимальная сторона рамки в пикселях изображения. */
+const MIN_BOX = 4;
+const ZOOM_MAX = 20;
+
+const asBox = (g: Geometry): Box | null =>
+  g.type === "bbox" ? { x: g.x, y: g.y, width: g.width, height: g.height } : null;
+
+const boxGeometry = (b: Box): Geometry => ({
+  type: "bbox",
+  x: Math.round(b.x),
+  y: Math.round(b.y),
+  width: Math.round(b.width),
+  height: Math.round(b.height),
+});
+
+/** Тянем за ручку: пересчёт краёв с клэмпом к кадру и минимальным размером. */
+function resizeBox(
+  before: Box,
+  handle: Handle,
+  p: { x: number; y: number },
+  imgW: number,
+  imgH: number
+): Box {
+  let { x, y } = before;
+  let right = before.x + before.width;
+  let bottom = before.y + before.height;
+  const px = Math.max(0, Math.min(p.x, imgW));
+  const py = Math.max(0, Math.min(p.y, imgH));
+
+  if (handle.includes("w")) x = Math.min(px, right - MIN_BOX);
+  if (handle.includes("e")) right = Math.max(px, x + MIN_BOX);
+  if (handle.includes("n")) y = Math.min(py, bottom - MIN_BOX);
+  if (handle.includes("s")) bottom = Math.max(py, y + MIN_BOX);
+
+  return { x, y, width: right - x, height: bottom - y };
+}
+
+/** Перенос рамки целиком — не даём уехать за пределы кадра. */
+function moveBox(before: Box, dx: number, dy: number, imgW: number, imgH: number): Box {
+  return {
+    ...before,
+    x: Math.max(0, Math.min(before.x + dx, imgW - before.width)),
+    y: Math.max(0, Math.min(before.y + dy, imgH - before.height)),
+  };
+}
+
 const geometryAnchor = (g: Geometry): { x: number; y: number } =>
   g.type === "bbox"
     ? { x: g.x, y: g.y }
@@ -51,9 +139,19 @@ function ReviewPage() {
   const [draftRect, setDraftRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // зум/панорама: держим видимую область в координатах изображения
+  const [view, setView] = useState<Viewport | null>(null);
+  // текущее перетаскивание: изменение размера, перенос рамки или панорама
+  const [drag, setDrag] = useState<DragState | null>(null);
+  // стек отмены: до/после геометрии, чтобы Cmd+Z возвращал рамку на место
+  const undoStack = useRef<GeometryEdit[]>([]);
+  const redoStack = useRef<GeometryEdit[]>([]);
+  const [undoDepth, setUndoDepth] = useState(0);
+
   const svgRef = useRef<SVGSVGElement>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
   const drawStart = useRef<{ x: number; y: number } | null>(null);
+  const spaceHeld = useRef(false);
 
   // --- загрузка проекта и классов ---
   useEffect(() => {
@@ -211,6 +309,44 @@ function ReviewPage() {
     [images, imageId, navigate, projectId]
   );
 
+  const zoomed = !!(image && view && view.w < image.width - 0.5);
+
+  const resetView = useCallback(() => {
+    if (image) setView({ x: 0, y: 0, w: image.width, h: image.height });
+  }, [image]);
+
+  // при смене изображения сбрасываем зум и стек отмены — они про прошлый кадр
+  useEffect(() => {
+    if (image) setView({ x: 0, y: 0, w: image.width, h: image.height });
+    undoStack.current = [];
+    redoStack.current = [];
+    setUndoDepth(0);
+  }, [image]);
+
+  const undo = useCallback(async () => {
+    const last = undoStack.current.pop();
+    setUndoDepth(undoStack.current.length);
+    if (!last) return;
+    redoStack.current.push(last);
+    try {
+      await patch(last.id, { geometry: last.before });
+    } catch (err) {
+      setError(errorText(err));
+    }
+  }, [patch]);
+
+  const redo = useCallback(async () => {
+    const next = redoStack.current.pop();
+    if (!next) return;
+    undoStack.current.push(next);
+    setUndoDepth(undoStack.current.length);
+    try {
+      await patch(next.id, { geometry: next.after });
+    } catch (err) {
+      setError(errorText(err));
+    }
+  }, [patch]);
+
   const canDraw = isOcr || activeClass !== null;
 
   // --- горячие клавиши ---
@@ -242,10 +378,28 @@ function ReviewPage() {
         case "Backspace":
           if (selectedId) void remove(selectedId);
           return;
+        case " ":
+          // пробел зажат — курсор превращается в «руку» для панорамы
+          spaceHeld.current = true;
+          if (zoomed) e.preventDefault();
+          return;
+      }
+
+      // отмена/возврат правки геометрии
+      if ((e.metaKey || e.ctrlKey) && e.code === "KeyZ") {
+        e.preventDefault();
+        void (e.shiftKey ? redo() : undo());
+        return;
       }
 
       // цифры/буквы — по e.code: работают при CapsLock/Shift и на любой раскладке
       if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+      // зум с клавиатуры: 0 — вернуть кадр целиком
+      if (e.code === "Digit0" || e.code === "Numpad0") {
+        resetView();
+        return;
+      }
 
       // 1-9 — класс выделенной аннотации (и класс для следующих боксов);
       // code — чтобы работало на любой раскладке, key — запасной вариант
@@ -278,12 +432,23 @@ function ReviewPage() {
           break;
       }
     };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.key === " ") spaceHeld.current = false;
+    };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keyup", onKeyUp);
+    };
   }, [
     filtered,
     selectedId,
     navigateSibling,
+    undo,
+    redo,
+    resetView,
+    zoomed,
     setStatusAndAdvance,
     remove,
     classes,
@@ -292,34 +457,154 @@ function ReviewPage() {
     canDraw,
   ]);
 
-  // --- рисование нового бокса ---
-  const toImageCoords = (e: React.PointerEvent) => {
-    const rect = svgRef.current!.getBoundingClientRect();
-    if (!image) return { x: 0, y: 0 };
+  // --- координаты, зум, рисование и правка ---
+  /** Клиентские координаты -> координаты изображения с учётом зума. */
+  const toImageCoords = (e: { clientX: number; clientY: number }) => {
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect || !image || !view) return { x: 0, y: 0 };
     return {
-      x: ((e.clientX - rect.left) / rect.width) * image.width,
-      y: ((e.clientY - rect.top) / rect.height) * image.height,
+      x: view.x + ((e.clientX - rect.left) / rect.width) * view.w,
+      y: view.y + ((e.clientY - rect.top) / rect.height) * view.h,
     };
   };
 
-  const onPointerDown = (e: React.PointerEvent) => {
-    if (!drawMode) return;
-    drawStart.current = toImageCoords(e);
-    setDraftRect({ ...drawStart.current, w: 0, h: 0 });
-  };
-
-  const onPointerMove = (e: React.PointerEvent) => {
-    if (!drawMode || !drawStart.current) return;
+  /** Зум колесом к точке под курсором, чтобы она осталась на месте. */
+  const onWheel = (e: React.WheelEvent) => {
+    if (!image || !view) return;
+    const factor = e.deltaY < 0 ? 1 / 1.15 : 1.15;
+    const w = Math.max(image.width / ZOOM_MAX, Math.min(view.w * factor, image.width));
+    const scale = w / view.w;
+    if (scale === 1) return;
     const p = toImageCoords(e);
-    setDraftRect({
-      x: Math.min(drawStart.current.x, p.x),
-      y: Math.min(drawStart.current.y, p.y),
-      w: Math.abs(p.x - drawStart.current.x),
-      h: Math.abs(p.y - drawStart.current.y),
+    const h = view.h * scale;
+    setView({
+      w,
+      h,
+      x: Math.max(0, Math.min(p.x - (p.x - view.x) * scale, image.width - w)),
+      y: Math.max(0, Math.min(p.y - (p.y - view.y) * scale, image.height - h)),
     });
   };
 
+  /** Сохранить геометрию и положить правку в стек отмены. */
+  const commitGeometry = useCallback(
+    async (id: string, before: Geometry, after: Geometry) => {
+      try {
+        await patch(id, { geometry: after });
+      } catch (err) {
+        setError(errorText(err));
+        // сервер не принял — возвращаем рамку на место, чтобы экран не врал
+        setAnnotations((as) =>
+          as.map((a) => (a.id === id ? { ...a, geometry: before } : a))
+        );
+        return;
+      }
+      setError(null);
+      undoStack.current.push({ id, before, after });
+      redoStack.current = [];
+      setUndoDepth(undoStack.current.length);
+    },
+    [patch]
+  );
+
+  const startResize = (e: React.PointerEvent, a: Annotation, handle: Handle) => {
+    const box = asBox(a.geometry);
+    if (!box) return;
+    e.stopPropagation();
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+    setSelectedId(a.id);
+    setDrag({ mode: "resize", id: a.id, handle, before: box, box });
+  };
+
+  const startMove = (e: React.PointerEvent, a: Annotation) => {
+    const box = asBox(a.geometry);
+    if (!box || drawMode) return;
+    e.stopPropagation();
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+    setSelectedId(a.id);
+    setDrag({ mode: "move", id: a.id, before: box, box, grab: toImageCoords(e) });
+  };
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    if (drawMode) {
+      drawStart.current = toImageCoords(e);
+      setDraftRect({ ...drawStart.current, w: 0, h: 0 });
+      return;
+    }
+    // панорама: средняя кнопка или зажатый пробел при увеличении
+    if (view && (e.button === 1 || spaceHeld.current) && zoomed) {
+      e.preventDefault();
+      setDrag({
+        mode: "pan",
+        startPointer: { x: e.clientX, y: e.clientY },
+        startView: view,
+      });
+    }
+  };
+
+  const onPointerMove = (e: React.PointerEvent) => {
+    if (drawMode && drawStart.current) {
+      const p = toImageCoords(e);
+      setDraftRect({
+        x: Math.min(drawStart.current.x, p.x),
+        y: Math.min(drawStart.current.y, p.y),
+        w: Math.abs(p.x - drawStart.current.x),
+        h: Math.abs(p.y - drawStart.current.y),
+      });
+      return;
+    }
+    if (!drag || !image) return;
+
+    if (drag.mode === "pan") {
+      const rect = svgRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const dx = ((e.clientX - drag.startPointer.x) / rect.width) * drag.startView.w;
+      const dy = ((e.clientY - drag.startPointer.y) / rect.height) * drag.startView.h;
+      setView({
+        ...drag.startView,
+        x: Math.max(
+          0,
+          Math.min(drag.startView.x - dx, image.width - drag.startView.w)
+        ),
+        y: Math.max(
+          0,
+          Math.min(drag.startView.y - dy, image.height - drag.startView.h)
+        ),
+      });
+      return;
+    }
+
+    const p = toImageCoords(e);
+    const box =
+      drag.mode === "resize"
+        ? resizeBox(drag.before, drag.handle, p, image.width, image.height)
+        : moveBox(
+            drag.before,
+            p.x - drag.grab.x,
+            p.y - drag.grab.y,
+            image.width,
+            image.height
+          );
+    setDrag({ ...drag, box });
+    // рисуем оптимистично: рамка должна ехать за курсором без задержки сети
+    setAnnotations((as) =>
+      as.map((a) => (a.id === drag.id ? { ...a, geometry: boxGeometry(box) } : a))
+    );
+  };
+
   const onPointerUp = async () => {
+    if (drag) {
+      const finished = drag;
+      setDrag(null);
+      if (finished.mode !== "pan") {
+        const after = boxGeometry(finished.box);
+        const before = boxGeometry(finished.before);
+        // клик без движения не считаем правкой — иначе стек отмены засорится
+        if (JSON.stringify(after) !== JSON.stringify(before)) {
+          await commitGeometry(finished.id, before, after);
+        }
+      }
+      return;
+    }
     if (!drawMode || !draftRect) return;
     drawStart.current = null;
     const rect = draftRect;
@@ -358,6 +643,9 @@ function ReviewPage() {
   ).length;
   // подписи в SVG живут в координатах картинки — размер считаем от неё
   const labelSize = Math.max(10, Math.round(Math.max(image.width, image.height) / 55));
+  // ручки задаём в координатах изображения, но масштабируем обратно по зуму,
+  // чтобы на любом увеличении они оставались одного размера на экране
+  const handleSize = ((view?.w ?? image.width) / image.width) * (labelSize * 0.8);
   const activeColor = activeClass
     ? classByName.get(activeClass)?.color ?? UNKNOWN_CLASS_COLOR
     : "#2f7df6";
@@ -383,6 +671,19 @@ function ReviewPage() {
           + бокс
           {!isOcr && activeClass ? `: ${activeClass}` : ""}
         </button>
+        <button onClick={() => void undo()} disabled={undoDepth === 0} title="Cmd+Z">
+          ↶ отменить
+        </button>
+        {zoomed && (
+          <button onClick={resetView} title="0">
+            ⤢ весь кадр
+          </button>
+        )}
+        <span className="zoom-hint muted">
+          {zoomed
+            ? "колесо — зум, пробел+перетаскивание — сдвиг"
+            : "колесо — зум"}
+        </span>
         <span className="toolbar-group">
           <select
             value={statusFilter}
@@ -415,11 +716,17 @@ function ReviewPage() {
           {url && <img src={url} alt="" draggable={false} />}
           <svg
             ref={svgRef}
-            viewBox={`0 0 ${image.width} ${image.height}`}
-            className={drawMode ? "drawing" : ""}
+            viewBox={
+              view
+                ? `${view.x} ${view.y} ${view.w} ${view.h}`
+                : `0 0 ${image.width} ${image.height}`
+            }
+            className={drawMode ? "drawing" : drag?.mode === "pan" ? "panning" : ""}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={() => void onPointerUp()}
+            onPointerCancel={() => setDrag(null)}
+            onWheel={onWheel}
           >
             {filtered.map((a) => {
               const color = colorOf(a);
@@ -458,8 +765,48 @@ function ReviewPage() {
                       width={a.geometry.width}
                       height={a.geometry.height}
                       {...common}
+                      onPointerDown={(e) => startMove(e, a)}
+                      style={{
+                        cursor: drawMode
+                          ? "crosshair"
+                          : isSelected
+                            ? "move"
+                            : "pointer",
+                      }}
                     />
                   )}
+                  {/* ручки — только у выделенной рамки, иначе экран рябит */}
+                  {isSelected &&
+                    !drawMode &&
+                    a.geometry.type === "bbox" &&
+                    HANDLES.map((h) => {
+                      const g = a.geometry as Extract<Geometry, { type: "bbox" }>;
+                      const hx =
+                        h.includes("w")
+                          ? g.x
+                          : h.includes("e")
+                            ? g.x + g.width
+                            : g.x + g.width / 2;
+                      const hy =
+                        h.includes("n")
+                          ? g.y
+                          : h.includes("s")
+                            ? g.y + g.height
+                            : g.y + g.height / 2;
+                      return (
+                        <rect
+                          key={h}
+                          className="box-handle"
+                          x={hx - handleSize / 2}
+                          y={hy - handleSize / 2}
+                          width={handleSize}
+                          height={handleSize}
+                          fill={color}
+                          onPointerDown={(e) => startResize(e, a, h)}
+                          style={{ cursor: HANDLE_CURSOR[h] }}
+                        />
+                      );
+                    })}
                   {!isOcr && (
                     <text
                       x={anchor.x}
