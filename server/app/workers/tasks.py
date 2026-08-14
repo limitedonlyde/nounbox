@@ -67,6 +67,14 @@ REVIEWED_DUPLICATE_IOU = 0.7
 _ALREADY_LABELED = object()
 
 
+def _carries_fatal(task) -> bool:
+    """A finished task whose result aborts the whole job."""
+    if not task.done() or task.cancelled():
+        return False
+    _, _, outcomes = task.result()
+    return any(isinstance(outcome, ValueError) for _, outcome in outcomes)
+
+
 async def _predict_image(image, labelers: dict, configs: dict, labeled: dict):
     """Fetch one image and run every engine on it. Touches no database session.
 
@@ -327,7 +335,13 @@ async def run_autolabel(ctx: dict, job_id: str) -> None:
             try:
                 while pending:
                     image, fetch_error, outcomes = await pending.popleft()
-                    if queued < len(images):
+                    # Do not start another image once a fatal error is already
+                    # sitting in a finished task. It is only a peek — the error
+                    # is still applied in order below — but it stops the run
+                    # from reaching for more work it has already decided to
+                    # throw away. What is in flight cannot be un-sent, so the
+                    # waste is bounded by the concurrency, not by the project.
+                    if queued < len(images) and not any(map(_carries_fatal, pending)):
                         pending.append(asyncio.create_task(predict(images[queued])))
                         queued += 1
                     applied += 1
