@@ -157,6 +157,12 @@ def square_box_to_image(
     secrets=[auth_secret],
     timeout=1800,
     scaledown_window=120,
+    # Deliberately below the 10 concurrent GPUs a Modal Starter workspace
+    # allows. Measured ceiling on a T4: ~296 images/min at this value, ~682 at
+    # 10 — but the platform's labeling run posts images ONE AT A TIME, so today
+    # neither ceiling is reachable through the product and the extra containers
+    # would only widen the blast radius of a runaway job. Raise it together with
+    # making the worker send requests concurrently, not before.
     max_containers=4,
 )
 @modal.asgi_app()

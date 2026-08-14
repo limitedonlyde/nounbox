@@ -35,6 +35,12 @@ when they are done, in roughly this order.
   particular part, one SKU among many.
 - **Copy annotations from the previous image** — near-free for footage shot from
   a fixed camera.
+- **Send images to a remote engine concurrently** — the labeling run posts one
+  image at a time, which is right for a CPU engine sharing the worker's own
+  cores but leaves a remote GPU almost idle. Measured on a Modal T4: the
+  endpoint sustains ~296 images/min at the shipped 4 containers and ~682 at 10,
+  while a run through the app gets one image every 1.35 s. The engine is not the
+  bottleneck; the loop driving it is.
 
 ## Later
 

@@ -205,10 +205,27 @@ on average — CUDA and CPU kernels reduce in a different order, so the engines
 agree to float32 tolerance rather than bit for bit.
 
 Speed is where the GPU actually pays: 1.35 s median per image against 2.3 s on
-a laptop CPU, measured one request at a time — a batch that keeps several
-containers busy will do better. Budget 36 s for the first photo after an idle
-period: the app scales to zero, so it pays for the container boot and the
-~620 MB of weights, once.
+a laptop CPU, measured one request at a time. Budget 36 s for the first photo
+after an idle period — the app scales to zero, so it pays for the container
+boot and the ~620 MB of weights, once. Later cold starts are seconds, because
+the weights stay in the volume.
+
+Throughput, measured by pushing concurrent requests at the deployed endpoint
+until it stopped going faster:
+
+| Containers | Ceiling | Where it saturates |
+|---|---|---|
+| 4 (the shipped default) | ~296 images/min | 8 concurrent requests |
+| 10 (a Starter workspace's limit) | ~682 images/min | 24 concurrent requests |
+
+Both ceilings are just the container count divided by the ~0.85 s an image
+actually takes, which is what you want to see — nothing else is in the way.
+Past saturation only latency grows.
+
+**None of that is reachable through the app yet.** A labeling run posts images
+to the engine one at a time, so what you get today is the 1.35 s per image, not
+the 682 per minute. The endpoint is already faster than the thing driving it;
+making the worker send concurrent requests is on the [roadmap](ROADMAP.md).
 
 One finding worth reusing elsewhere: the stock
 `post_process_grounded_object_detection` in `transformers` keeps only the
