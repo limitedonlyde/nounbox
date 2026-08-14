@@ -47,7 +47,14 @@ F1 0.824 against the CPU's 0.823 on the same 79 photos, verified. Modal's free
 tier is $30/month, which at that rate is on the order of a hundred thousand
 photos — an order of magnitude, not a quota.
 
-![Review page: boxes, handles, class legend](docs/review.jpg)
+## Reviewing is the job
+
+![Fixing a box: drag a corner, press 3 to change the class, A to accept, D to draw a missing one](docs/review-loop.gif)
+
+*The queue serves the least confident boxes first. Drag a corner to fix the
+geometry, press a digit to change the class, `A` to accept, `D` to draw one the
+engine missed — the keys are the point, since you will do this a few hundred
+times.*
 
 ## Where it breaks
 
