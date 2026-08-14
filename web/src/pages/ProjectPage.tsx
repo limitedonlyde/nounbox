@@ -250,10 +250,35 @@ function ProjectPage() {
 
   return (
     <div>
-      <h1>{project?.name ?? "..."}</h1>
-      <p className="muted">
-        Task type: <strong>{TASK_TITLES[taskType]}</strong>
-      </p>
+      <div className="page-head">
+        <div className="page-head-main">
+          <Link to="/" className="crumb">
+            ← Projects
+          </Link>
+          <h1>{project?.name ?? "..."}</h1>
+          <span className="muted">{TASK_TITLES[taskType]}</span>
+        </div>
+        <div className="page-head-actions">
+          <button onClick={() => fileInput.current?.click()} disabled={busy}>
+            Upload files
+          </button>
+        </div>
+      </div>
+
+      <div className="stat-row">
+        <div className="stat">
+          <div className="stat-value">{images.length}</div>
+          <div className="stat-label">Images</div>
+        </div>
+        <div className="stat">
+          <div className="stat-value">{totalAnnotations}</div>
+          <div className="stat-label">Annotations</div>
+        </div>
+        <div className={totalPending > 0 ? "stat stat-accent" : "stat"}>
+          <div className="stat-value">{totalPending}</div>
+          <div className="stat-label">Pending review</div>
+        </div>
+      </div>
 
       {isDetection && (
         <ClassesPanel
@@ -263,10 +288,12 @@ function ProjectPage() {
         />
       )}
 
-      <div className="toolbar">
-        <button onClick={() => fileInput.current?.click()} disabled={busy}>
-          Upload files
-        </button>
+      <div className="card">
+        <div className="card-head">
+          <h2>Labeling</h2>
+          <span className="muted">an engine draws the first pass; you review it</span>
+        </div>
+        <div className="card-body toolbar">
         <input
           ref={fileInput}
           type="file"
@@ -387,14 +414,20 @@ the ones you accepted or fixed stay"
         </span>
       </div>
 
+      </div>
+
       {message && <p className="muted">{message}</p>}
 
-      <p className="muted">
-        Images: {images.length} · Annotations: {totalAnnotations} · Pending
-        review: <strong>{totalPending}</strong>
-      </p>
-
-      <div className="image-grid">
+      <div className="card">
+        <div className="card-head">
+          <h2>Images</h2>
+          <span className="muted">
+            {images.length === 0
+              ? "nothing uploaded yet"
+              : `${images.length} in this project`}
+          </span>
+        </div>
+        <div className="card-body image-grid">
         {images.map((img) => (
           <Link
             key={img.id}
@@ -410,6 +443,7 @@ the ones you accepted or fixed stay"
             </div>
           </Link>
         ))}
+        </div>
       </div>
     </div>
   );

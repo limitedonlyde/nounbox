@@ -34,9 +34,16 @@ function ProjectsPage() {
 
   return (
     <div>
-      <h1>Projects</h1>
+      <div className="page-head">
+        <div className="page-head-main">
+          <h1>Projects</h1>
+          <span className="muted">
+            name the classes you want found, drop in photos, review the boxes
+          </span>
+        </div>
+      </div>
 
-      <form className="project-form" onSubmit={create}>
+      <form className="project-form card" onSubmit={create}>
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -55,7 +62,13 @@ function ProjectsPage() {
       {error && <p className="error">{error}</p>}
 
       {projects.length === 0 ? (
-        <p className="muted">No projects yet — create the first one.</p>
+        <div className="empty">
+          <p className="empty-title">No projects yet</p>
+          <p className="muted">
+            Create one above — a detection project finds objects you name, an OCR
+            project reads text.
+          </p>
+        </div>
       ) : (
         <ul className="project-list">
           {projects.map((p) => (

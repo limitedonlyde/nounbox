@@ -21,20 +21,28 @@
   --text-dim: #656f7d;
   --text-faint: #939ba6;
 
-  --accent: #2f6feb;
+  --accent: #6d43e8;
+  --accent-hover: #5c34d6;
   --accent-contrast: #ffffff;
-  --accent-soft: #e8f0fe;
+  --accent-soft: #f1ecfe;
+  --accent-ring: rgb(109 67 232 / 22%);
 
-  --ok: #1f9d55;
-  --warn: #c77700;
-  --danger: #d64545;
+  --ok: #17915a;
+  --ok-soft: #e7f6ee;
+  --warn: #b26a00;
+  --warn-soft: #fdf2e0;
+  --danger: #d13b3b;
+  --danger-soft: #fdecec;
 
   --radius: 10px;
   --radius-sm: 7px;
   --radius-lg: 14px;
 
-  --shadow-sm: 0 1px 2px rgb(16 22 30 / 6%);
-  --shadow: 0 2px 8px rgb(16 22 30 / 8%), 0 1px 2px rgb(16 22 30 / 4%);
+  --shadow-sm: 0 1px 2px rgb(16 22 30 / 5%);
+  --shadow: 0 1px 3px rgb(16 22 30 / 7%), 0 8px 24px -12px rgb(16 22 30 / 14%);
+  --shadow-lg: 0 2px 4px rgb(16 22 30 / 6%), 0 16px 40px -16px rgb(16 22 30 / 20%);
+
+  --header-h: 52px;
 
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
 
@@ -55,16 +63,22 @@
     --text-dim: #9aa5b1;
     --text-faint: #6e7681;
 
-    --accent: #4c8dff;
-    --accent-contrast: #0e1116;
-    --accent-soft: #17233a;
+    --accent: #a78bfa;
+    --accent-hover: #b9a3fb;
+    --accent-contrast: #16111f;
+    --accent-soft: #221a35;
+    --accent-ring: rgb(167 139 250 / 26%);
 
     --ok: #3fb950;
+    --ok-soft: #10231a;
     --warn: #d29922;
+    --warn-soft: #241d10;
     --danger: #f85149;
+    --danger-soft: #2a1517;
 
     --shadow-sm: 0 1px 2px rgb(0 0 0 / 30%);
-    --shadow: 0 2px 10px rgb(0 0 0 / 35%);
+    --shadow: 0 1px 3px rgb(0 0 0 / 40%), 0 8px 24px -12px rgb(0 0 0 / 55%);
+    --shadow-lg: 0 2px 4px rgb(0 0 0 / 40%), 0 16px 40px -16px rgb(0 0 0 / 65%);
   }
 }
 
@@ -107,41 +121,262 @@ a {
   font-size: 0.875rem;
 }
 
-/* --- top bar --- */
+/* --- app shell ---------------------------------------------------------
+   A sticky header with a real brand mark, not a line of text: the page
+   underneath scrolls past it, so the app keeps an edge at the top the way an
+   application does rather than a document. */
 .topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.7rem 1.25rem;
-  background: var(--surface);
+  height: var(--header-h);
+  padding: 0 1.5rem;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter: saturate(1.6) blur(10px);
   border-bottom: 1px solid var(--border);
-  margin-bottom: 0.5rem;
 }
 
 .logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
   font-weight: 650;
-  font-size: 1rem;
-  letter-spacing: -0.01em;
+  font-size: 0.9375rem;
+  letter-spacing: -0.015em;
   text-decoration: none;
   color: inherit;
 }
 
+/* the mark: a bracket around a dot — "a word, boxed" */
+.logo::before {
+  content: "";
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  background: linear-gradient(145deg, var(--accent), #9b6bff);
+  box-shadow: inset 0 0 0 3.5px var(--surface), 0 1px 2px rgb(16 22 30 / 25%);
+}
+
 .topbar .muted {
   font-size: 0.8125rem;
+  padding-left: 0.75rem;
+  border-left: 1px solid var(--border);
 }
 
 .topbar-link {
   margin-left: auto;
   color: var(--text-dim);
   text-decoration: none;
-  font-size: 0.875rem;
-  padding: 0.3rem 0.6rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  padding: 0.35rem 0.7rem;
   border-radius: var(--radius-sm);
 }
 
 .topbar-link:hover {
   color: var(--text);
   background: var(--surface-2);
+}
+
+/* --- page header ------------------------------------------------------- */
+.page-head {
+  display: flex;
+  align-items: flex-end;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin: 1.75rem 0 1.25rem;
+}
+
+.page-head-main {
+  min-width: 0;
+}
+
+.page-head h1 {
+  margin: 0;
+}
+
+.page-head .muted {
+  display: block;
+  margin-top: 0.2rem;
+}
+
+.page-head-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8125rem;
+  color: var(--text-dim);
+  text-decoration: none;
+  margin-bottom: 0.35rem;
+}
+
+.crumb:hover {
+  color: var(--text);
+}
+
+/* --- card -------------------------------------------------------------- */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.card + .card {
+  margin-top: 1rem;
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.9rem 1.1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.card-head h2 {
+  font-size: 0.9375rem;
+  font-weight: 620;
+}
+
+.card-head .muted {
+  font-size: 0.8125rem;
+}
+
+.card-head-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.card-body {
+  padding: 1.1rem;
+}
+
+/* --- stat tiles -------------------------------------------------------- */
+.stat-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 190px));
+  justify-content: start;
+  gap: 0.75rem;
+  margin: 1rem 0 1.25rem;
+}
+
+.stat {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.7rem 0.9rem;
+}
+
+.stat-value {
+  font-size: 1.35rem;
+  font-weight: 640;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+
+.stat-label {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-top: 0.15rem;
+}
+
+.stat-accent .stat-value {
+  color: var(--accent);
+}
+
+
+/* --- toolbar inside a card ---------------------------------------------
+   The controls are grouped by what they do, not laid out in one long row:
+   "pick an engine and run it" is a different intent from "accept in bulk" and
+   from "export", and a single strip of eight controls made all three look like
+   one setting. */
+.card-body.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin: 0;
+  padding: 1.1rem;
+  background: none;
+  border: 0;
+  border-radius: 0;
+}
+
+.card-body.toolbar > label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8125rem;
+  color: var(--text-dim);
+}
+
+.card-body.toolbar .toolbar-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding-left: 0.75rem;
+  margin-left: 0.25rem;
+  border-left: 1px solid var(--border);
+}
+
+/* the image grid sits inside a card body, so it brings its own edge */
+.card-body.image-grid {
+  padding: 1rem;
+}
+
+/* --- review page chrome ------------------------------------------------
+   Only the frame around the canvas: the canvas sizing rules further down are
+   correctness-critical (the SVG overlay is positioned against it) and are not
+   touched here. */
+.review-panel .card,
+.class-legend,
+.editor,
+.ann-list-card {
+  border-radius: var(--radius-lg);
+}
+
+.ann-list li {
+  border-radius: var(--radius-sm);
+}
+
+.ann-list li[aria-selected="true"],
+.ann-list li.selected {
+  background: var(--accent-soft);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+/* --- empty state ------------------------------------------------------- */
+.empty {
+  background: var(--surface);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+  padding: 2.25rem 1.5rem;
+  text-align: center;
+}
+
+.empty-title {
+  margin: 0 0 0.35rem;
+  font-weight: 600;
+}
+
+.empty .muted {
+  margin: 0;
+  max-width: 46ch;
+  margin-inline: auto;
 }
 
 /* --- form elements --- */
@@ -341,7 +576,9 @@ kbd {
 .project-form {
   display: flex;
   gap: 0.5rem;
-  margin: 1rem 0;
+  align-items: center;
+  margin: 0 0 1.25rem;
+  padding: 0.9rem 1rem;
 }
 
 .project-form input {
@@ -457,8 +694,11 @@ kbd {
 }
 
 .class-name {
-  font-family: var(--mono);
+  /* Not monospace. A class name is the user's own word for a thing in their
+     photos — set in the interface typeface it reads as content; set in mono it
+     read as debug output. */
   font-size: 0.8125rem;
+  font-weight: 500;
 }
 
 .class-remove {
@@ -564,9 +804,40 @@ kbd {
 /* --- review --- */
 .review-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
+  grid-template-columns: minmax(0, 1fr) 320px;
   gap: 1rem;
   align-items: start;
+}
+
+/* A stage under the photo. The image is the subject of this screen, and a
+   neutral dark ground separates it from the page instead of letting it float
+   on the same surface as the controls. The stage is a WRAPPER — the canvas
+   inside keeps hugging the image exactly, which the box overlay depends on. */
+.review-stage {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 1rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  min-height: 320px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .review-stage {
+    background: #0b0e13;
+  }
+}
+
+/* section headings inside the right-hand panel */
+.panel-title {
+  font-size: 0.6875rem;
+  font-weight: 620;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-faint);
+  margin: 0 0 0.5rem;
 }
 
 @media (max-width: 900px) {

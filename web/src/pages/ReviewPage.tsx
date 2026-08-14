@@ -736,6 +736,7 @@ function ReviewPage() {
       {error && <p className="error">{error}</p>}
 
       <div className="review-layout">
+        <div className="review-stage">
         <div className="review-canvas">
           {url && <img src={url} alt="" draggable={false} />}
           <svg
@@ -861,6 +862,7 @@ function ReviewPage() {
               />
             )}
           </svg>
+        </div>
         </div>
 
         <aside className="review-panel">
