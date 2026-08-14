@@ -147,7 +147,7 @@ you press **Connect GPU** once more on the detection card.
 |---|---|---|
 | **OWLv2** | CPU | Default. Predictions do not change when you add a class |
 | LLMDet | CPU | Slower, sometimes tighter boxes. Max 91 classes per run |
-| GPU boxes (`modal_gpu_detect`) | your Modal account | OWLv2 on a T4 — same model, thresholds and post-processing as the CPU default. Throughput not measured yet |
+| GPU boxes (`modal_gpu_detect`) | your Modal account | OWLv2 on a T4. Same F1 as the CPU default (0.824 vs 0.823), 1.35 s/image instead of 2.3 |
 | GPU OCR (`modal_gpu`) | your Modal account | PaddleOCR PP-OCRv5. OCR projects only |
 | Consensus | CPU | Runs several engines and scores their agreement |
 | VLM / HTTP | any endpoint | Bring your own model behind a small convention |
@@ -176,14 +176,30 @@ Measured on 79 photos from LVIS val (323 objects, 114 classes) spanning cluttere
 scenes, street shots, phone snaps and product-style images. Each image was
 prompted with its own classes, IoU 0.5, greedy matching.
 
-| Engine | F1 | Precision | Recall | Sec/image (CPU) |
+| Engine | F1 | Precision | Recall | Sec/image |
 |---|---|---|---|---|
-| OWLv2 (default) | 0.823 | 0.826 | 0.820 | 2.3 |
-| LLMDet base | 0.848 | 0.867 | 0.830 | 4.7 |
+| OWLv2 (default) | 0.823 | 0.826 | 0.820 | 2.3 (CPU) |
+| OWLv2 on a Modal T4 | 0.824 | 0.828 | 0.820 | 1.35 (GPU, median) |
+| LLMDet base | 0.848 | 0.867 | 0.830 | 4.7 (CPU) |
 
 Treat these as a starting point, not a verdict: 323 objects is a small sample,
 and LVIS is a friendly benchmark for this family of models. What matters is how
 an engine does on *your* photos.
+
+The GPU row is the same 79 photos through the deployed recipe, same prompts and
+same 0.25 threshold — it exists to show the two paths agree, not to claim the
+GPU is smarter. They found the same 265 objects and missed the same 58. Out of
+321 detections exactly one differed: a `coffee table` scoring 0.2502 on the CPU,
+two ten-thousandths above the cutoff, which landed just under it on the GPU.
+Everything else matched to a fraction of a pixel, with scores drifting by ~0.001
+on average — CUDA and CPU kernels reduce in a different order, so the engines
+agree to float32 tolerance rather than bit for bit.
+
+Speed is where the GPU actually pays: 1.35 s median per image against 2.3 s on
+a laptop CPU, measured one request at a time — a batch that keeps several
+containers busy will do better. Budget 36 s for the first photo after an idle
+period: the app scales to zero, so it pays for the container boot and the
+~620 MB of weights, once.
 
 One finding worth reusing elsewhere: the stock
 `post_process_grounded_object_detection` in `transformers` keeps only the
