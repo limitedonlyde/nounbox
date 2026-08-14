@@ -11,8 +11,8 @@ GPU, and nothing leaves your machine.
 
 ![Nounbox in action](docs/demo.gif)
 
-*Five class names, four photos, fourteen boxes — then a human fixes the one that
-is off and exports YOLO.*
+*Seven class names, four photos, eleven boxes — then a human drags a corner
+straight and accepts it with one key.*
 
 > **Status: early.** The core loop works end to end and is covered by tests, but
 > the API and the database schema still move between releases, there is no
