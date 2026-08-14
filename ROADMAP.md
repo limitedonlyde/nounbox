@@ -35,10 +35,6 @@ when they are done, in roughly this order.
   particular part, one SKU among many.
 - **Copy annotations from the previous image** — near-free for footage shot from
   a fixed camera.
-- **Reuse the connection to a remote engine** — the HTTP labeler calls
-  `httpx.post`, which builds a client per image, so every photo pays a fresh TCP
-  and TLS handshake to Modal. With concurrent dispatch in place this is what
-  keeps a run at ~68 images/min against an endpoint measured at ~296.
 
 ## Later
 

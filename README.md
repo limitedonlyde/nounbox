@@ -226,9 +226,15 @@ A labeling run now keeps four images in flight against a remote engine
 (`REMOTE_LABELER_CONCURRENCY`), which is what `max_containers=4` in the recipe
 is sized for — raise the two together or the extra containers never wake.
 Measured end to end through the app, not against the bare endpoint: 79 photos
-went from 153 s to 70 s, 31 to 68 images a minute, same 94 annotations either
-way. That is short of the endpoint's own 296/min because each image still opens
-a fresh TLS connection to Modal; pooling them is the next thing to fix.
+in 19 s instead of 153, 31 to 249 images a minute, same 94 annotations either
+way. That is 84% of what the endpoint itself sustains, so the loop is no longer
+what limits a run.
+
+Two changes got there, and the smaller-looking one mattered more. Concurrency
+alone took 153 s to 70. The rest came from reusing one pooled HTTP connection
+instead of building a client per image: a fresh TLS handshake to Modal per photo
+was costing more than the inference. It shows up on the sequential path too —
+that went from 153 s to 81 s without any concurrency at all.
 
 Only the platform's own GPU engines are dispatched concurrently. The `vlm` and
 `http` engines point wherever you configured them — `vlm`'s default is Ollama on

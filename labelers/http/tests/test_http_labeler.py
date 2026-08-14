@@ -1,6 +1,7 @@
 """The HTTP labeler and its two platform-supplied subclasses.
 
-Nothing here touches the network: httpx.post is replaced with a recorder.
+Nothing here touches the network: the module's _post seam is replaced with a
+recorder, so the pooled client is never built.
 """
 
 import json
@@ -17,7 +18,7 @@ from nounbox_labeler_http import labeler as labeler_module
 
 
 class Recorder:
-    """Stands in for httpx.post: remembers the call, answers with a canned body."""
+    """Stands in for _post: remembers the call, answers with a canned body."""
 
     def __init__(self, payload=None, status_code=200, text=""):
         self.payload = payload if payload is not None else {"annotations": []}
@@ -25,7 +26,7 @@ class Recorder:
         self.text = text
         self.calls: list[dict] = []
 
-    def __call__(self, url, content=None, headers=None, timeout=None):
+    def __call__(self, url, *, content=None, headers=None, timeout=None):
         self.calls.append(
             {"url": url, "content": content, "headers": headers, "timeout": timeout}
         )
@@ -45,7 +46,7 @@ class Recorder:
 @pytest.fixture
 def post(monkeypatch):
     recorder = Recorder()
-    monkeypatch.setattr(labeler_module.httpx, "post", recorder)
+    monkeypatch.setattr(labeler_module, "_post", recorder)
     return recorder
 
 
@@ -108,8 +109,8 @@ def test_4xx_is_a_value_error(monkeypatch):
     """run_autolabel only stops the job on ValueError; anything else counts one
     failed image and the run ends DONE with nothing labeled."""
     monkeypatch.setattr(
-        labeler_module.httpx,
-        "post",
+        labeler_module,
+        "_post",
         Recorder(status_code=401, text="Unauthorized"),
     )
 
@@ -120,7 +121,7 @@ def test_4xx_is_a_value_error(monkeypatch):
 def test_5xx_stays_an_http_error(monkeypatch):
     # a 500 really can be one flaky image — the job should survive it
     monkeypatch.setattr(
-        labeler_module.httpx, "post", Recorder(status_code=503, text="oops")
+        labeler_module, "_post", Recorder(status_code=503, text="oops")
     )
 
     with pytest.raises(httpx.HTTPStatusError):
@@ -142,7 +143,7 @@ def test_oversized_config_is_refused_before_the_request(post):
 
 
 def test_missing_text_becomes_none(monkeypatch):
-    monkeypatch.setattr(labeler_module.httpx, "post", Recorder(BOX))
+    monkeypatch.setattr(labeler_module, "_post", Recorder(BOX))
 
     annotations = HttpLabeler().predict(
         b"img", {"endpoint": "https://example.test/predict"}
@@ -248,8 +249,8 @@ def test_label_outside_the_class_list_is_refused(monkeypatch):
     them quietly is the failure being fixed: export routes unknown labels into
     skipped_labels and the user ends up with an empty dataset."""
     monkeypatch.setattr(
-        labeler_module.httpx,
-        "post",
+        labeler_module,
+        "_post",
         Recorder(
             {
                 "annotations": [
@@ -275,7 +276,7 @@ def test_label_outside_the_class_list_is_refused(monkeypatch):
 
 
 def test_matching_labels_pass_through(monkeypatch):
-    monkeypatch.setattr(labeler_module.httpx, "post", Recorder(BOX))
+    monkeypatch.setattr(labeler_module, "_post", Recorder(BOX))
 
     annotations = ModalGpuDetectLabeler().predict(
         b"img", {"endpoint": "https://example.test/predict", "classes": ["sofa"]}
@@ -289,3 +290,26 @@ def test_detect_is_detection_only():
 
     assert ModalGpuDetectLabeler.capabilities == {Capability.DETECTION}
     assert ModalGpuDetectLabeler.name == "modal_gpu_detect"
+
+
+# --- connection reuse ---
+def test_the_client_is_built_once_and_shared():
+    """The point of the pool: one client for the process, not one per image.
+
+    A throwaway client per call meant a fresh TCP connection and a full TLS
+    handshake for every photo sent to a remote GPU.
+    """
+    previous = labeler_module._CLIENT
+    labeler_module._CLIENT = None
+    try:
+        first = labeler_module._client()
+        second = labeler_module._client()
+        assert first is second
+        assert first.is_closed is False
+        # sized above the platform's own concurrency so worker threads never
+        # queue waiting for a free connection
+        assert labeler_module._LIMITS.max_keepalive_connections >= 16
+    finally:
+        if labeler_module._CLIENT is not None:
+            labeler_module._CLIENT.close()
+        labeler_module._CLIENT = previous

@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from typing import Any
 
 import httpx
@@ -46,6 +47,36 @@ import httpx
 from nounbox_sdk import Annotation, BBox, Capability
 
 DEFAULT_ENDPOINT = os.environ.get("LABELER_HTTP_ENDPOINT", "")
+
+# One pooled client for the whole process instead of httpx.post, which builds a
+# throwaway client per call. That cost is invisible on a local endpoint and
+# dominant on a remote one: every image paid a fresh TCP connection and a full
+# TLS handshake to the GPU host. Measured against a Modal T4, a labeling run
+# spent roughly a third of its wall clock on handshakes it did not need.
+#
+# httpx.Client is documented as thread-safe, which is what this needs — the
+# platform calls predict() from several worker threads at once. The pool is
+# sized above the platform's own concurrency so the threads never queue on a
+# free connection, and keepalive expiry lets idle connections go on their own.
+_LIMITS = httpx.Limits(
+    max_connections=32, max_keepalive_connections=32, keepalive_expiry=90.0
+)
+_CLIENT: httpx.Client | None = None
+_CLIENT_LOCK = threading.Lock()
+
+
+def _client() -> httpx.Client:
+    global _CLIENT
+    if _CLIENT is None:
+        with _CLIENT_LOCK:
+            if _CLIENT is None:  # another thread may have won the race
+                _CLIENT = httpx.Client(limits=_LIMITS)
+    return _CLIENT
+
+
+def _post(url: str, *, content: bytes, headers: dict, timeout: float):
+    """Single seam for the request, so the pooling stays an implementation detail."""
+    return _client().post(url, content=content, headers=headers, timeout=timeout)
 
 # Headers have a size limit (nginx and uvicorn both answer 431 well before
 # 64 KB). A project with hundreds of classes would hit it as an unreadable
@@ -94,7 +125,7 @@ class HttpLabeler:
         if config.get("api_key"):
             headers["Authorization"] = f"Bearer {config['api_key']}"
 
-        response = httpx.post(
+        response = _post(
             endpoint,
             content=image,
             headers=headers,
