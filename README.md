@@ -130,10 +130,19 @@ offers itself to a project whose task its recipe actually serves.
 
 The detection GPU is the same model, the same thresholds and the same
 post-processing as the CPU engine — a project labeled half on CPU and half on
-GPU is still one dataset. What changes is per-image latency: roughly 2 s on an
-M2 CPU against 0.1–0.2 s on a T4. Note that a labeling run still goes through
-the images **one at a time**, so that is the whole of the speed-up; the extra
-containers Modal is allowed to start buy nothing yet.
+GPU is still one dataset, and the benchmark above shows the two paths finding
+the same objects. What changes is per-image latency: 2.3 s on an M2 CPU against
+a measured 1.35 s on a T4, plus 36 s once for the first photo after an idle
+period. Note that a labeling run still goes through the images **one at a
+time**, so that is the whole of the speed-up; the extra containers Modal is
+allowed to start buy nothing yet.
+
+**You will probably not pay for this.** Modal's Starter plan carries
+[$30/month in free credits](https://modal.com/pricing), and a T4 bills at
+$0.000164/second — about 50 GPU-hours a month, which at the rate above is on
+the order of a hundred thousand photos before the free credits run out. Cold
+starts and the idle window eat into that, so treat it as an order of magnitude
+rather than a quota. Set a spending limit on the workspace anyway.
 
 **Upgrading an existing installation.** The new engine needs one new table,
 which the server creates by itself on the next start — no migration, no manual
