@@ -78,7 +78,8 @@ each class is how many are on this image.
 
 **Bring a GPU only if you want one.** The default engine runs on the CPU. If
 your batches get big, paste a Modal token and the platform deploys the GPU
-recipe into your own account — you pay Modal directly, and it scales to zero.
+recipe for your task into your own account — you pay Modal directly, and it
+scales to zero.
 
 ![Settings page: optional GPU](docs/settings.jpg)
 
@@ -116,10 +117,29 @@ exported.
 
 For large batches, open **Settings**, paste a Modal API token and press
 **Connect GPU**. The platform deploys the recipe into *your* Modal account,
-secures the endpoint with a generated bearer token, and a GPU engine appears in
-the engine list. You pay Modal directly for the seconds you use, and it scales
-to zero when idle. This is entirely optional — the CPU path is the default and
-needs no account at all.
+secures the endpoint with a generated bearer token, and the matching GPU engine
+appears in the engine list. You pay Modal directly for the seconds you use, and
+it scales to zero when idle. This is entirely optional — the CPU path is the
+default and needs no account at all.
+
+There are **two GPU apps, one per task**, deployed by their own buttons:
+`modal_gpu_detect` runs OWLv2 and draws boxes, `modal_gpu` runs PaddleOCR and
+reads text. They share no dependency, so each is built and deployed separately,
+and deploying one leaves the other exactly as it is. A GPU engine only ever
+offers itself to a project whose task its recipe actually serves.
+
+The detection GPU is the same model, the same thresholds and the same
+post-processing as the CPU engine — a project labeled half on CPU and half on
+GPU is still one dataset. What changes is per-image latency: roughly 2 s on an
+M2 CPU against 0.1–0.2 s on a T4. Note that a labeling run still goes through
+the images **one at a time**, so that is the whole of the speed-up; the extra
+containers Modal is allowed to start buy nothing yet.
+
+**Upgrading an existing installation.** The new engine needs one new table,
+which the server creates by itself on the next start — no migration, no manual
+SQL. A GPU you had already connected is preserved as the **OCR** GPU and keeps
+working without a redeploy; that is what it always was. To get boxes on the GPU
+you press **Connect GPU** once more on the detection card.
 
 ## Choosing an engine
 
@@ -127,7 +147,8 @@ needs no account at all.
 |---|---|---|
 | **OWLv2** | CPU | Default. Predictions do not change when you add a class |
 | LLMDet | CPU | Slower, sometimes tighter boxes. Max 91 classes per run |
-| GPU on Modal | your Modal account | For large batches |
+| GPU boxes (`modal_gpu_detect`) | your Modal account | OWLv2 on a T4 — same model, thresholds and post-processing as the CPU default. Throughput not measured yet |
+| GPU OCR (`modal_gpu`) | your Modal account | PaddleOCR PP-OCRv5. OCR projects only |
 | Consensus | CPU | Runs several engines and scores their agreement |
 | VLM / HTTP | any endpoint | Bring your own model behind a small convention |
 

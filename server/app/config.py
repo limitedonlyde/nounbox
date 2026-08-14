@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     # empty name -> deploy under the app name from the recipe itself
     modal_gpu_app_name: str = "nounbox-gpu"
     modal_gpu_recipe_path: str = ""
+    # The detection GPU is a SECOND Modal app with its own image and its own
+    # name: the OCR and detection recipes share no dependency. Per-engine
+    # overrides on purpose — one shared path would deploy one recipe as both.
+    modal_gpu_detect_app_name: str = "nounbox-gpu-detect"
+    modal_gpu_detect_recipe_path: str = ""
     # if set, the recipe protects /predict with a Bearer header, and the
     # worker puts the same token into the modal_gpu engine config
     nounbox_gpu_token: str = ""

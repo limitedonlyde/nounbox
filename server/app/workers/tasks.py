@@ -1,5 +1,6 @@
 """Background jobs (arq). Run with: arq app.workers.tasks.WorkerSettings"""
 
+import json
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -17,6 +18,7 @@ from app.models import (
     AnnotationStatus,
     Document,
     DocumentStatus,
+    GpuDeployment,
     GpuStatus,
     Image,
     Job,
@@ -97,18 +99,42 @@ async def run_autolabel(ctx: dict, job_id: str) -> None:
                     "No labelers installed (entry points group 'nounbox.labelers')"
                 )
 
-            # the engine config is filled in from the settings (for modal_gpu —
-            # the GPU endpoint); the user never writes that JSON by hand
+            # the engine config is filled in from the settings (for the GPU
+            # engines — their endpoint); the user never writes that JSON by hand
             settings_row = await settings_store.get_row(session)
+            deployments = await settings_store.load_deployments(session)
             base_config = dict(job.payload.get("config") or {})
 
-            # detection: the engine looks for exactly what is listed in the
-            # project classes. An empty list is an error with a hint, not
-            # "label whatever
-            # you find" — otherwise the job quietly ends with zero annotations.
+            not_ready: dict[str, str] = {}
+
             project = await session.get(Project, job.project_id)
             if project is None:
                 raise RuntimeError("Project not found")
+
+            # An engine may only run on a task it actually serves. Without this
+            # the labeler=null fan-out runs EVERY installed engine, so an OCR
+            # engine labels a detection project and returns text_line boxes
+            # that no project class matches — export drops them silently and
+            # the run reports success with nothing to show for it.
+            for name in list(labelers):
+                if settings_store.labeler_supports_task(name, project.task_type):
+                    continue
+                serves = "/".join(settings_store.CATALOG[name]["tasks"])
+                message = (
+                    f"Engine {name} handles {serves} projects; "
+                    f"this project is {project.task_type}"
+                )
+                if wanted:
+                    raise RuntimeError(message)
+                not_ready[name] = message
+                del labelers[name]
+            if not labelers:
+                raise RuntimeError("; ".join(not_ready.values()))
+
+            # detection: the engine looks for exactly what is listed in the
+            # project classes. An empty list is an error with a hint, not
+            # "label whatever you find" — otherwise the job quietly ends with
+            # zero annotations.
             if project.task_type == TaskType.DETECTION:
                 class_names = (
                     (
@@ -126,11 +152,10 @@ async def run_autolabel(ctx: dict, job_id: str) -> None:
                 base_config["classes"] = list(class_names)
 
             configs: dict[str, dict] = {}
-            not_ready: dict[str, str] = {}
             for name in list(labelers):
                 try:
                     configs[name] = settings_store.resolve_labeler_config(
-                        name, base_config, settings_row
+                        name, base_config, settings_row, deployments
                     )
                 except settings_store.LabelerNotReadyError as exc:
                     # engine requested explicitly: fail the job, not a silent skip
@@ -396,17 +421,70 @@ async def run_ingest(ctx: dict, job_id: str) -> None:
             await session.commit()
 
 
-async def run_deploy_gpu(ctx: dict, job_id: str) -> None:
-    """Deploy the GPU recipe into the user's Modal account.
+async def _warm_up(
+    endpoint_url: str, path: str, gpu_token: str | None, config: dict
+) -> bool:
+    """POST a 1x1 PNG so the first real photo does not pay the weight download.
 
-    The token is taken from the settings and decrypted here — it never reaches
-    the job payload or the logs. Result: gpu_endpoint_url + gpu_status=ready;
-    on failure — failed and the message in gpu_error.
+    Best effort by definition: a cold Modal container downloads hundreds of
+    megabytes of weights on its first request, and without this the user's
+    first image looks like a hang. A failure here costs a slow first image and
+    nothing else, so it never fails the deploy job.
+
+    The config header is mandatory, not optional politeness. The detection
+    recipe answers 400 to a request with no classes BEFORE it loads the model,
+    so an empty warm-up returns in milliseconds having downloaded nothing —
+    and a 4xx must therefore not count as warmed, or the job cheerfully reports
+    success for a container that is still cold.
+    """
+    headers = {
+        "Content-Type": "application/octet-stream",
+        "X-Labeler-Config": json.dumps(config),
+    }
+    if gpu_token:
+        headers["Authorization"] = f"Bearer {gpu_token}"
+    try:
+        import httpx
+
+        async with httpx.AsyncClient(timeout=180.0) as http:
+            response = await http.post(
+                settings_store.predict_url(endpoint_url, path),
+                content=WARMUP_PNG,
+                headers=headers,
+            )
+        if response.status_code >= 400:
+            logger.info(
+                "GPU warm-up answered %s — the model may still be cold",
+                response.status_code,
+            )
+            return False
+        return True
+    except Exception as exc:
+        logger.info("GPU warm-up skipped: %s", exc)
+        return False
+
+
+# 1x1 transparent PNG — the smallest thing that boots the model
+WARMUP_PNG = (
+    b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08"
+    b"\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00"
+    b"\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
+)
+
+
+async def run_deploy_gpu(ctx: dict, job_id: str) -> None:
+    """Deploy one GPU recipe into the user's Modal account.
+
+    Which recipe is in job.payload["engine"] (modal_gpu — OCR, the default for
+    a pre-upgrade caller; modal_gpu_detect — detection). The token is taken
+    from the settings and decrypted here — it never reaches the job payload or
+    the logs. Result: the engine's deployment row gets endpoint_url +
+    status=ready; on failure — failed and the message in its error.
     """
     import secrets as secrets_mod
 
     from app.crypto import decrypt_secret, encrypt_secret
-    from app.services import modal_deploy
+    from app.services import gpu_recipes, modal_deploy
 
     async with SessionLocal() as session:
         job = await session.get(Job, uuid.UUID(job_id))
@@ -414,13 +492,42 @@ async def run_deploy_gpu(ctx: dict, job_id: str) -> None:
             logger.error("Job %s not found", job_id)
             return
 
+        engine = job.payload.get("engine") or gpu_recipes.MODAL_GPU
+        if engine not in gpu_recipes.GPU_RECIPES:
+            job.status = JobStatus.FAILED
+            job.result = {"error": f"Unknown GPU engine {engine!r}"}
+            job.finished_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            await session.commit()
+            return
+        recipe = gpu_recipes.GPU_RECIPES[engine]
+        legacy = engine == gpu_recipes.MODAL_GPU
+
         job.status = JobStatus.RUNNING
         row = await settings_store.get_or_create(session)
-        row.gpu_status = GpuStatus.DEPLOYING
-        row.gpu_error = None
+        # persist: same reason as the deploy endpoint — this row gets written
+        deployments = await settings_store.load_deployments(session, persist=True)
+        deployment = deployments.get(engine)
+        if deployment is None:
+            deployment = GpuDeployment(
+                engine=engine,
+                app_name=job.payload.get("app_name")
+                or gpu_recipes.configured_app_name(engine),
+            )
+            session.add(deployment)
+        deployment.status = GpuStatus.DEPLOYING
+        deployment.error = None
+        if legacy:
+            # one release of dual-writing: a rollback to the previous image
+            # must still find a working OCR endpoint in the old columns
+            row.gpu_status = GpuStatus.DEPLOYING
+            row.gpu_error = None
         await session.commit()
 
+        # both are pre-bound because the except block scrubs them out of the
+        # error message, and the first raise below happens before either is set
         token_secret = ""
+        gpu_token = ""
+        warmed = False
         try:
             if not (row.modal_token_id and row.modal_token_secret_encrypted):
                 raise RuntimeError(
@@ -433,34 +540,66 @@ async def run_deploy_gpu(ctx: dict, job_id: str) -> None:
             deployed = await modal_deploy.deploy_gpu_app(
                 row.modal_token_id,
                 token_secret,
+                engine=engine,
                 app_name=job.payload.get("app_name") or None,
                 gpu_token=gpu_token,
             )
             if not settings.nounbox_gpu_token:
-                row.gpu_access_token_encrypted = encrypt_secret(gpu_token)
+                deployment.access_token_encrypted = encrypt_secret(gpu_token)
 
-            row.gpu_status = GpuStatus.READY
-            row.gpu_endpoint_url = deployed.endpoint_url
-            row.gpu_error = None
+            deployment.status = GpuStatus.READY
+            deployment.endpoint_url = deployed.endpoint_url
+            deployment.error = None
+            if legacy:
+                row.gpu_status = GpuStatus.READY
+                row.gpu_endpoint_url = deployed.endpoint_url
+                row.gpu_error = None
+                if not settings.nounbox_gpu_token:
+                    row.gpu_access_token_encrypted = deployment.access_token_encrypted
+
+            # Commit BEFORE warming up. The Modal app is already live and
+            # already billable at this point, and the generated bearer is baked
+            # into its Secret; the warm-up that follows waits up to 180 s on a
+            # cold container. If the worker dies in that window and this state
+            # is still only in memory, the user is left paying for an endpoint
+            # the platform has no record of and cannot address.
+            deployment.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            await session.commit()
+
+            warmed = await _warm_up(
+                deployed.endpoint_url,
+                recipe.predict_path,
+                gpu_token,
+                recipe.warmup_config,
+            )
             job.status = JobStatus.DONE
             job.result = {
+                "engine": engine,
                 "app_id": deployed.app_id,
                 "app_page_url": deployed.app_page_url,
                 "endpoint_url": deployed.endpoint_url,
                 "warnings": deployed.warnings,
+                "warmed": warmed,
             }
         except Exception as exc:
             # the secret must not seep into the DB, the API response or the log;
             # no traceback — it can carry the arguments of the modal calls
-            message = modal_deploy.scrub_secrets(str(exc), token_secret)
+            # gpu_token is a live credential in this scope as well — this
+            # message goes into the DB, the API response and the log
+            message = modal_deploy.scrub_secrets(str(exc), token_secret, gpu_token)
             logger.error("Deploy GPU job %s failed: %s", job_id, message)
-            row.gpu_status = GpuStatus.FAILED
-            row.gpu_error = message
+            deployment.status = GpuStatus.FAILED
+            deployment.error = message
+            if legacy:
+                row.gpu_status = GpuStatus.FAILED
+                row.gpu_error = message
             job.status = JobStatus.FAILED
-            job.result = {"error": message}
+            job.result = {"engine": engine, "error": message}
         finally:
-            row.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
-            job.finished_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            deployment.updated_at = now
+            row.updated_at = now
+            job.finished_at = now
             await session.commit()
 
 

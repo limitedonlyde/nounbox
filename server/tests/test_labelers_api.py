@@ -3,7 +3,7 @@
 from sqlalchemy import select
 
 from app.api import labelers as labelers_api
-from app.models import GpuStatus, InstanceSettings
+from app.models import GpuDeployment, GpuStatus, InstanceSettings
 
 
 class FakeLabeler:
@@ -22,15 +22,31 @@ def install(monkeypatch, *names: str) -> None:
     )
 
 
-async def ready_gpu(session_factory, token: str = "ak-1234567890abcdef") -> None:
+async def with_token(session_factory, token: str = "ak-1234567890abcdef") -> None:
     async with session_factory() as session:
-        row = InstanceSettings(
-            modal_token_id=token,
-            modal_token_secret_encrypted="encrypted",
-            gpu_status=GpuStatus.READY,
-            gpu_endpoint_url="https://ws--nounbox-gpu-fastapi-app.modal.run",
+        session.add(
+            InstanceSettings(
+                modal_token_id=token, modal_token_secret_encrypted="encrypted"
+            )
         )
-        session.add(row)
+        await session.commit()
+
+
+async def ready_gpu(
+    session_factory,
+    engine: str = "modal_gpu",
+    token: str = "ak-1234567890abcdef",
+) -> None:
+    await with_token(session_factory, token)
+    async with session_factory() as session:
+        session.add(
+            GpuDeployment(
+                engine=engine,
+                app_name=engine,
+                status=GpuStatus.READY,
+                endpoint_url=f"https://ws--{engine}-fastapi-app.modal.run",
+            )
+        )
         await session.commit()
 
 
@@ -69,12 +85,13 @@ async def test_modal_gpu_available_when_gpu_ready(client, session_factory, monke
 
 async def test_deploying_gpu_reports_progress_reason(client, session_factory, monkeypatch):
     install(monkeypatch, "rapidocr", "modal_gpu")
+    await with_token(session_factory)
     async with session_factory() as session:
         session.add(
-            InstanceSettings(
-                modal_token_id="ak-1234567890abcdef",
-                modal_token_secret_encrypted="encrypted",
-                gpu_status=GpuStatus.DEPLOYING,
+            GpuDeployment(
+                engine="modal_gpu",
+                app_name="nounbox-gpu",
+                status=GpuStatus.DEPLOYING,
             )
         )
         await session.commit()
@@ -83,6 +100,42 @@ async def test_deploying_gpu_reports_progress_reason(client, session_factory, mo
 
     assert items["modal_gpu"]["available"] is False
     assert "deploying" in items["modal_gpu"]["reason"]
+
+
+async def test_gpu_engines_are_split_by_task(client, monkeypatch):
+    install(monkeypatch, "rapidocr", "modal_gpu", "modal_gpu_detect")
+
+    items = {i["name"]: i for i in (await client.get("/api/v1/labelers")).json()}
+
+    # this is the fix: the OCR GPU no longer offers itself to a detection
+    # project, and there is a separate engine that actually draws boxes
+    assert items["modal_gpu"]["tasks"] == ["ocr"]
+    assert items["modal_gpu"]["requires"] == "modal"
+    assert items["modal_gpu_detect"]["tasks"] == ["detection"]
+    assert items["modal_gpu_detect"]["requires"] == "modal"
+
+
+async def test_gpu_availability_is_per_engine(client, session_factory, monkeypatch):
+    """Deploying the OCR app must not make the detection engine look ready."""
+    install(monkeypatch, "modal_gpu", "modal_gpu_detect")
+    await ready_gpu(session_factory, "modal_gpu")
+
+    items = {i["name"]: i for i in (await client.get("/api/v1/labelers")).json()}
+
+    assert items["modal_gpu"]["available"] is True
+    assert items["modal_gpu_detect"]["available"] is False
+    assert "detection GPU" in items["modal_gpu_detect"]["reason"]
+
+
+async def test_detection_gpu_available_once_deployed(client, session_factory, monkeypatch):
+    install(monkeypatch, "modal_gpu", "modal_gpu_detect")
+    await ready_gpu(session_factory, "modal_gpu_detect")
+
+    items = {i["name"]: i for i in (await client.get("/api/v1/labelers")).json()}
+
+    assert items["modal_gpu_detect"]["available"] is True
+    assert items["modal_gpu_detect"]["reason"] is None
+    assert items["modal_gpu"]["available"] is False
 
 
 async def test_core_labelers_listed_even_if_plugin_missing(client, monkeypatch):

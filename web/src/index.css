@@ -817,6 +817,28 @@ kbd {
   font-size: 0.8125rem;
 }
 
+/* one card per deployable GPU recipe (OCR / detection) */
+.gpu-card {
+  border-top: 1px solid var(--border);
+  padding-top: 0.8rem;
+  margin-top: 0.8rem;
+}
+
+.gpu-card:first-of-type {
+  border-top: none;
+  padding-top: 0;
+  margin-top: 0;
+}
+
+.gpu-card h3 {
+  font-size: 0.9375rem;
+  margin-bottom: 0.5rem;
+}
+
+.gpu-card .gpu-status {
+  margin-bottom: 0.6rem;
+}
+
 .gpu-status {
   display: flex;
   align-items: center;

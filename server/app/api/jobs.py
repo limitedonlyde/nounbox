@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_session
 from app.models import Job, JobStatus, JobType, Project
 from app.schemas import AutolabelRequest, JobOut
+from app.services import settings_store
 
 router = APIRouter(tags=["jobs"])
 
@@ -18,8 +19,22 @@ async def start_autolabel(
     request: Request,
     session: AsyncSession = Depends(get_session),
 ):
-    if await session.get(Project, project_id) is None:
+    project = await session.get(Project, project_id)
+    if project is None:
         raise HTTPException(404, "Project not found")
+
+    # An engine that cannot serve this task type is refused right here, so the
+    # user sees it in the UI instead of waiting for a job to fail. The worker
+    # repeats the check — it is the real guard, this one is only fast feedback.
+    if body.labeler and not settings_store.labeler_supports_task(
+        body.labeler, project.task_type
+    ):
+        serves = "/".join(settings_store.CATALOG[body.labeler]["tasks"])
+        raise HTTPException(
+            400,
+            f"Engine {body.labeler} handles {serves} projects; "
+            f"this project is {project.task_type}",
+        )
 
     job = Job(
         project_id=project_id,

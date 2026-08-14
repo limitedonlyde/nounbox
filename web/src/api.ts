@@ -64,13 +64,27 @@ export interface Job {
 
 export type GpuStatus = "not_configured" | "deploying" | "ready" | "failed";
 
+/** One GPU recipe deployed (or not) into the user's Modal account. */
+export interface GpuDeployment {
+  /** Engine name it is served under: modal_gpu (OCR), modal_gpu_detect (boxes). */
+  engine: string;
+  title: string;
+  task: TaskType;
+  status: GpuStatus;
+  endpoint_url: string | null;
+  error: string | null;
+}
+
 export interface Settings {
   access_protected: boolean;
   modal_configured: boolean;
   modal_token_id_masked: string | null;
+  /** Legacy mirror of the OCR GPU (engine modal_gpu). Prefer `gpus`. */
   gpu_status: GpuStatus;
   gpu_endpoint_url: string | null;
   gpu_error: string | null;
+  /** One entry per GPU recipe, in registry order. */
+  gpus: GpuDeployment[];
 }
 
 export type LabelerRequires = "cpu" | "modal" | "config";
@@ -280,7 +294,9 @@ export const api = {
     ),
   deleteModalToken: () =>
     request<Settings>("/settings/modal", { method: "DELETE" }),
-  deployGpu: () => request<Job>("/settings/gpu/deploy", { method: "POST" }),
+  /** Deploy one GPU recipe (engine name from settings.gpus). */
+  deployGpu: (engine: string) =>
+    request<Job>("/settings/gpu/deploy", json("POST", { engine })),
   listLabelers: () => request<Labeler[]>("/labelers"),
 
   // jobs

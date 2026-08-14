@@ -202,15 +202,37 @@ class JobOut(BaseModel):
 
 
 # --- Settings / labelers ---
+class GpuDeploymentOut(BaseModel):
+    """One GPU recipe deployed (or not) into the user's Modal account."""
+
+    engine: str
+    title: str
+    task: TaskType
+    status: GpuStatus
+    endpoint_url: str | None
+    error: str | None
+
+
 class SettingsOut(BaseModel):
     modal_configured: bool
     modal_token_id_masked: str | None
+    # The three flat gpu_* fields describe the OCR GPU (engine modal_gpu) and
+    # are kept for compatibility: they were the whole GPU state before there
+    # was more than one GPU app. New readers should use `gpus`.
     gpu_status: GpuStatus
     gpu_endpoint_url: str | None
     gpu_error: str | None
+    gpus: list[GpuDeploymentOut] = []
     # whether the endpoints that control the Modal token and the deploy are
     # protected; false — the UI shows a warning instead of pretending all is well
     access_protected: bool = False
+
+
+class GpuDeployRequest(BaseModel):
+    """Which GPU recipe to deploy. Optional body: a browser tab opened before
+    the upgrade posts nothing, and that still means the OCR GPU it knew."""
+
+    engine: str = "modal_gpu"
 
 
 class ModalTokenUpdate(BaseModel):

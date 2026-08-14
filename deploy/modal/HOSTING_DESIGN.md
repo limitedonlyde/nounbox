@@ -13,20 +13,41 @@ Status: design (no code was changed). Research date: 2026-08-11.
 ## 0. Sidebar: the GPU recipe auto-deployed from the UI
 
 A scheme separate from this document, already approved by the owner: labeling runs in
-two modes — **SIMPLE** (`rapidocr`, CPU, works right after `docker compose up`) and
-**ADVANCED** (`modal_gpu`, optional). The platform brings the second mode up on its
-own, and `paddleocr_modal.py` is the very recipe it deploys.
+two modes — **SIMPLE** (CPU, works right after `docker compose up`: `owlv2` for
+detection, `rapidocr` for OCR) and **ADVANCED** (GPU, optional). The platform brings
+the second mode up on its own.
+
+**There is one recipe per task, and one engine name per recipe** — the registry lives
+in `server/app/services/gpu_recipes.py`:
+
+| engine | recipe | task | Modal app |
+|---|---|---|---|
+| `modal_gpu_detect` | `owlv2_modal.py` | detection | `nounbox-gpu-detect` |
+| `modal_gpu` | `paddleocr_modal.py` | ocr | `nounbox-gpu` |
+
+Not one fused recipe dispatching on the task: PaddleOCR and torch bring their own,
+different CUDA wheels, so fusing them makes a single ~12 GB image, slows OCR cold
+starts down for code that did not change, and stakes the one working GPU path on an
+unverified dependency mix. Two apps also mean a detection fix cannot break OCR, and
+that `Annotation.source["name"]` still identifies exactly one model.
 
 The flow: on the settings page the user pastes a Modal API token
 (`ak-…` / `as-…`, what `modal token new` hands out; `PUT /api/v1/settings`) and presses
-"Connect GPU" (`POST /api/v1/settings/gpu/deploy` → a Job of type `DEPLOY_GPU`).
-The platform imports `deploy/modal/paddleocr_modal.py`, takes the module-level `app`
-object and calls `modal.runner.deploy_app(app, name="nounbox-paddleocr",
-client=modal.Client.from_credentials(...))`; the URL is fetched separately with
+"Connect GPU" on one of the cards (`POST /api/v1/settings/gpu/deploy` with
+`{"engine": …}` → a Job of type `DEPLOY_GPU`). The platform imports that engine's
+recipe, takes the module-level `app` object and calls
+`modal.runner.deploy_app(app, name=…, client=modal.Client.from_credentials(...))`;
+the URL is fetched separately with
 `modal.Function.from_name(app, "fastapi_app", client=…).hydrate(client=…).get_web_url()`
-(it is not part of `DeployResult`) and stored in `settings.gpu_endpoint_url`. From
-there the worker in `run_autolabel` substitutes the endpoint into the `modal_gpu`
-engine config by itself — nobody writes JSON by hand.
+(it is not part of `DeployResult`) and stored in that engine's row of
+`gpu_deployments`. From there the worker in `run_autolabel` substitutes the endpoint
+into the engine config by itself — nobody writes JSON by hand. There is deliberately
+**no cross-engine fallback**: a detection project with only the OCR app deployed fails
+with a message instead of quietly posting photos to PaddleOCR.
+
+Each recipe is imported under its own `sys.modules` name (`nounbox_gpu_recipe_<engine>`):
+Modal serializes a function by the name of the module it was defined in, so two recipes
+sharing one key would make the second deploy overwrite the first one's functions.
 
 What follows from this for the recipe (and is already done):
 - `app` at module level, imports free of side effects and of reading local files —
@@ -43,12 +64,15 @@ What follows from this for the recipe (and is already done):
   when nothing changed Modal answers "Deployment skipped". Do not use
   `strategy="recreate"` — it kills live containers.
 
-The post-deploy check: `GET /health` returns `{"auth": "bearer"|"open",
-"engines_loaded": N}` — this is how the platform confirms that the container came up
-on a GPU and that the token made it through. The first `POST /predict` additionally
-pays for downloading the PP-OCRv5 weights (cached in the `nounbox-paddlex-cache`
-Volume), so it is better to "warm" the endpoint with a tiny PNG than with the user's
-first real page.
+The post-deploy check: `GET /health` returns `{"auth": "bearer"|"open", …}` — this is
+how the platform confirms that the container came up on a GPU and that the token made
+it through. The detection recipe also reports `"task": "detection"` there, so a human
+can tell in one `curl` which recipe is actually answering on a URL. The first
+`POST /predict` additionally pays for downloading the weights (PP-OCRv5 in the
+`nounbox-paddlex-cache` Volume, ~620 MB of OWLv2 in `nounbox-owlv2-cache`), so
+`run_deploy_gpu` warms the fresh endpoint with a 1×1 PNG rather than letting the
+user's first real photo pay for it. The warm-up is best effort and never fails the
+deploy job; the outcome lands in `job.result["warmed"]`.
 
 ---
 

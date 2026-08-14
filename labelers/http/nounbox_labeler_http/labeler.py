@@ -16,6 +16,23 @@ writing a plugin for the platform — it is enough to stand up an endpoint:
 
 Config: endpoint (or env LABELER_HTTP_ENDPOINT), api_key, backend_config, timeout.
 Ready-made backends live in deploy/modal/ of the monorepo.
+
+WHAT GOES INTO X-Labeler-Config. For the generic `http` engine: exactly
+config["backend_config"], nothing else — the endpoint is a third party's and
+the contract above is what it was written against. The platform's own engines
+(modal_gpu, modal_gpu_detect) override _backend_config to also forward the
+handful of keys the matching recipe understands, because the platform fills
+those in itself: the worker writes the project classes into config["classes"]
+and the UI writes config["score_threshold"], and neither of them knows about
+the backend_config envelope. Without that forwarding the recipes received `{}`
+on every image. `endpoint`, `api_key` and `timeout` are ours and never travel.
+
+4xx VERSUS 5xx. A 4xx is raised as ValueError, deliberately: run_autolabel
+treats ValueError as "this will fail the same way on every image" and stops the
+job with the message, while any other exception counts one failed image and
+lets the run finish DONE. A wrong bearer token or an empty class list used to
+produce a cheerful "Done, 0 annotations". A 5xx keeps raise_for_status —
+that one really can be a single flaky image.
 """
 
 from __future__ import annotations
@@ -30,6 +47,11 @@ from nounbox_sdk import Annotation, BBox, Capability
 
 DEFAULT_ENDPOINT = os.environ.get("LABELER_HTTP_ENDPOINT", "")
 
+# Headers have a size limit (nginx and uvicorn both answer 431 well before
+# 64 KB). A project with hundreds of classes would hit it as an unreadable
+# protocol error in the middle of a batch, so we say what is wrong instead.
+MAX_CONFIG_BYTES = 8000
+
 
 class HttpLabeler:
     name = "http"
@@ -43,6 +65,12 @@ class HttpLabeler:
         Capability.KIE,
     }
 
+    def _backend_config(self, config: dict) -> dict:
+        """What lands in X-Labeler-Config. The documented contract: the
+        backend_config envelope and nothing else. Subclasses that own their
+        backend widen this."""
+        return dict(config.get("backend_config") or {})
+
     def predict(self, image: bytes, config: dict) -> list[Annotation]:
         endpoint = config.get("endpoint") or DEFAULT_ENDPOINT
         if not endpoint:
@@ -50,9 +78,18 @@ class HttpLabeler:
                 "http labeler: endpoint not set (config.endpoint or LABELER_HTTP_ENDPOINT)"
             )
 
+        encoded = json.dumps(self._backend_config(config))
+        size = len(encoded.encode())
+        if size > MAX_CONFIG_BYTES:
+            raise ValueError(
+                f"{self.name}: the engine config is too large for the "
+                f"X-Labeler-Config header ({size} bytes, limit {MAX_CONFIG_BYTES}); "
+                "reduce the class list"
+            )
+
         headers = {
             "Content-Type": "application/octet-stream",
-            "X-Labeler-Config": json.dumps(config.get("backend_config", {})),
+            "X-Labeler-Config": encoded,
         }
         if config.get("api_key"):
             headers["Authorization"] = f"Bearer {config['api_key']}"
@@ -63,6 +100,16 @@ class HttpLabeler:
             headers=headers,
             timeout=float(config.get("timeout", 300)),
         )
+        if 400 <= response.status_code < 500 and response.status_code != 422:
+            # the same request will fail identically on every other image, so
+            # this aborts the job. 422 is the deliberate exception: it means
+            # THIS image was unreadable, which says nothing about the next one,
+            # and it falls through to raise_for_status below — a plain HTTP
+            # error the worker counts as one failed frame.
+            raise ValueError(
+                f"{self.name}: endpoint answered {response.status_code} — "
+                f"{response.text[:500]}"
+            )
         response.raise_for_status()
         return self._parse(response.json())
 
@@ -95,12 +142,88 @@ class HttpLabeler:
 
 
 class ModalGpuLabeler(HttpLabeler):
-    """The "hard" mode made turnkey: same HTTP contract, but the platform
-    supplies the endpoint.
+    """GPU OCR made turnkey: same HTTP contract, but the platform supplies the
+    endpoint.
 
     The user configures nothing by hand: the address of the recipe deployed
     into their own Modal account comes from the installation settings
-    (see services/settings_store.resolve_labeler_config).
+    (see services/settings_store.resolve_labeler_config). The recipe behind it
+    is deploy/modal/paddleocr_modal.py — OCR, hence RECOGNITION only.
     """
 
     name = "modal_gpu"
+    capabilities = {Capability.RECOGNITION}
+
+    # keys of the PaddleOCR recipe that the platform may set on the engine
+    # config directly; `lang` in particular has been ignored until now
+    FORWARDED = (
+        "lang",
+        "ocr_version",
+        "det_model",
+        "rec_model",
+        "text_det_limit_type",
+        "text_det_limit_side_len",
+        "text_det_thresh",
+        "text_det_box_thresh",
+        "text_det_unclip_ratio",
+        "text_rec_score_thresh",
+    )
+
+    def _backend_config(self, config: dict) -> dict:
+        payload = {k: config[k] for k in self.FORWARDED if config.get(k) is not None}
+        # an explicit backend_config always wins over the forwarded keys
+        payload.update(super()._backend_config(config))
+        return payload
+
+
+class ModalGpuDetectLabeler(HttpLabeler):
+    """GPU box detection made turnkey — the GPU twin of the owlv2 CPU engine.
+
+    Behind it is deploy/modal/owlv2_modal.py: same model, same thresholds, same
+    post-processing, so a project half-labeled on CPU and half on GPU is still
+    one dataset.
+    """
+
+    name = "modal_gpu_detect"
+    version = "0.1.0"
+    capabilities = {Capability.DETECTION}
+
+    # what owlv2_modal.py reads out of X-Labeler-Config. `classes` is written
+    # by the worker from the project classes, `score_threshold` by the UI.
+    FORWARDED = ("classes", "score_threshold", "nms_iou", "model")
+
+    def _backend_config(self, config: dict) -> dict:
+        payload = {k: config[k] for k in self.FORWARDED if config.get(k) is not None}
+        payload.update(super()._backend_config(config))
+        return payload
+
+    def predict(self, image: bytes, config: dict) -> list[Annotation]:
+        classes = [
+            str(c).strip() for c in (config.get("classes") or []) if str(c).strip()
+        ]
+        if not classes:
+            # an empty list is an error with a hint, not "find whatever you
+            # can": staying quiet ends the whole run with zero annotations
+            raise ValueError(
+                f"{self.name}: no classes given — add the project classes "
+                "before labeling"
+            )
+
+        annotations = super().predict(image, config)
+
+        # A label that is not a project class means the endpoint is not the
+        # Nounbox detection recipe — most likely an app deployed from the OCR
+        # recipe under this URL, answering with text_line boxes. Dropping them
+        # silently is exactly the failure being fixed: export routes unknown
+        # labels into skipped_labels and the user gets an empty dataset.
+        known = set(classes)
+        for annotation in annotations:
+            if annotation.label not in known:
+                raise ValueError(
+                    f"{self.name}: the endpoint returned label "
+                    f"{annotation.label!r}, which is not one of the project "
+                    "classes — the app deployed in your Modal account is "
+                    "probably not the Nounbox detection recipe; press Redeploy "
+                    "on the settings page"
+                )
+        return annotations

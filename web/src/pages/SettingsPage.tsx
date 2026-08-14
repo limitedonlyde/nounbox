@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, Settings } from "../api";
+import { api, GpuDeployment, GpuStatus, Settings, TASK_TITLES } from "../api";
 
-const STATUS_TEXT: Record<Settings["gpu_status"], string> = {
-  not_configured: "GPU engine not connected",
+const STATUS_TEXT: Record<GpuStatus, string> = {
+  not_configured: "Not deployed",
   deploying: "Deploying to your Modal account...",
-  ready: "GPU engine ready",
+  ready: "Ready",
   failed: "Deploy failed",
 };
 
-function GpuStatusBlock({ settings }: { settings: Settings }) {
-  const { gpu_status: status } = settings;
+function GpuStatusBlock({ deployment }: { deployment: GpuDeployment }) {
+  const { status } = deployment;
   return (
     <div className={`gpu-status gpu-status-${status}`}>
       <div className="gpu-status-title">
@@ -23,19 +23,20 @@ function GpuStatusBlock({ settings }: { settings: Settings }) {
           server.
         </p>
       )}
-      {status === "ready" && settings.gpu_endpoint_url && (
+      {status === "ready" && deployment.endpoint_url && (
         <p className="muted">
           Endpoint:{" "}
-          <a href={settings.gpu_endpoint_url} target="_blank" rel="noreferrer">
-            {settings.gpu_endpoint_url}
+          <a href={deployment.endpoint_url} target="_blank" rel="noreferrer">
+            {deployment.endpoint_url}
           </a>
           <br />
-          The <code>modal_gpu</code> engine is now available in the engine picker
-          on the project page.
+          The <code>{deployment.engine}</code> engine is now available in the
+          engine picker of a {TASK_TITLES[deployment.task].toLowerCase()}{" "}
+          project.
         </p>
       )}
-      {status === "failed" && settings.gpu_error && (
-        <p className="error">{settings.gpu_error}</p>
+      {status === "failed" && deployment.error && (
+        <p className="error">{deployment.error}</p>
       )}
     </div>
   );
@@ -49,14 +50,15 @@ function SettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const pollRef = useRef<number | null>(null);
-  const jobRef = useRef<string | null>(null);
+  // deploy jobs still in flight, by engine — each card starts its own
+  const jobsRef = useRef<Map<string, string>>(new Map());
 
   const stopPoll = useCallback(() => {
     if (pollRef.current !== null) {
       clearInterval(pollRef.current);
       pollRef.current = null;
     }
-    jobRef.current = null;
+    jobsRef.current.clear();
   }, []);
 
   useEffect(() => stopPoll, [stopPoll]);
@@ -71,20 +73,23 @@ function SettingsPage() {
     let misses = 0;
     pollRef.current = window.setInterval(async () => {
       try {
-        if (jobRef.current !== null) {
-          const job = await api.getJob(jobRef.current);
-          if (job.status !== "done" && job.status !== "failed") return;
-          jobRef.current = null;
+        for (const [engine, jobId] of [...jobsRef.current]) {
+          const job = await api.getJob(jobId);
+          if (job.status === "done" || job.status === "failed") {
+            jobsRef.current.delete(engine);
+          }
         }
         const s = await api.getSettings();
         misses = 0;
         setSettings(s);
         setError(null);
-        if (s.gpu_status !== "deploying") {
+        const deploying = s.gpus.some((g) => g.status === "deploying");
+        if (!deploying && jobsRef.current.size === 0) {
           stopPoll();
+          const ready = s.gpus.filter((g) => g.status === "ready");
           setMessage(
-            s.gpu_status === "ready"
-              ? "GPU engine deployed and ready."
+            ready.length > 0
+              ? `GPU engines ready: ${ready.map((g) => g.engine).join(", ")}.`
               : null
           );
         }
@@ -102,7 +107,7 @@ function SettingsPage() {
       const s = await api.getSettings();
       setSettings(s);
       setError(null);
-      if (s.gpu_status === "deploying") {
+      if (s.gpus.some((g) => g.status === "deploying")) {
         startPoll();
       }
     } catch (err) {
@@ -147,14 +152,25 @@ function SettingsPage() {
     }
   };
 
-  const deploy = async () => {
+  const deploy = async (engine: string) => {
     setBusy(true);
     setMessage(null);
     setError(null);
     try {
-      const job = await api.deployGpu();
-      jobRef.current = job.id;
-      setSettings((s) => (s ? { ...s, gpu_status: "deploying", gpu_error: null } : s));
+      const job = await api.deployGpu(engine);
+      jobsRef.current.set(engine, job.id);
+      setSettings((s) =>
+        s
+          ? {
+              ...s,
+              gpus: s.gpus.map((g) =>
+                g.engine === engine
+                  ? { ...g, status: "deploying", error: null }
+                  : g
+              ),
+            }
+          : s
+      );
       startPoll();
     } catch (err) {
       fail(err);
@@ -165,7 +181,7 @@ function SettingsPage() {
   };
 
   const wrongPrefix = tokenId.trim().length > 0 && !tokenId.trim().startsWith("ak-");
-  const deploying = settings?.gpu_status === "deploying";
+  const gpus = settings?.gpus ?? [];
 
   return (
     <div className="settings-page">
@@ -174,13 +190,15 @@ function SettingsPage() {
       <section className="settings-section">
         <h2>Labeling mode</h2>
         <p className="muted">
-          By default the platform labels documents on CPU with the{" "}
-          <code>rapidocr</code> engine — it works right away, no accounts and no
-          keys. GPU mode is an optional speed-up: the platform deploys the GPU
-          recipe <strong>into your own Modal account</strong>, you pay Modal
-          directly at your own rate, and the platform only starts the deploy and
-          calls the endpoint. Both modes return the same structure — per-line
-          polygons with text and confidence.
+          By default the platform labels on CPU — <code>owlv2</code> draws boxes
+          for the classes of a detection project, <code>rapidocr</code> reads
+          text in an OCR one. Both work right away, with no accounts and no
+          keys. GPU mode is an optional speed-up: the platform deploys the
+          matching recipe <strong>into your own Modal account</strong>, you pay
+          Modal directly at your own rate, and the platform only starts the
+          deploy and calls the endpoint. A GPU engine returns the same boxes as
+          its CPU twin, just faster — the two halves of a project stay one
+          dataset.
         </p>
       </section>
 
@@ -255,17 +273,35 @@ function SettingsPage() {
       </section>
 
       <section className="settings-section">
-        <h2>GPU engine</h2>
-        {settings ? <GpuStatusBlock settings={settings} /> : <p className="muted">...</p>}
-        <button
-          className="primary"
-          onClick={() => void deploy()}
-          disabled={busy || !settings?.modal_configured || deploying}
-        >
-          {settings?.gpu_status === "ready" ? "Redeploy" : "Connect GPU"}
-        </button>
-        {!settings?.modal_configured && (
-          <span className="muted"> — save a Modal token first</span>
+        <h2>GPU engines</h2>
+        <p className="muted">
+          One app per task: they share no dependency, so each is deployed
+          separately and costs nothing while it is not deployed. Deploying one
+          leaves the other exactly as it is.
+        </p>
+        {settings ? (
+          gpus.map((deployment) => (
+            <div className="gpu-card" key={deployment.engine}>
+              <h3>{deployment.title}</h3>
+              <GpuStatusBlock deployment={deployment} />
+              <button
+                className="primary"
+                onClick={() => void deploy(deployment.engine)}
+                disabled={
+                  busy ||
+                  !settings.modal_configured ||
+                  deployment.status === "deploying"
+                }
+              >
+                {deployment.status === "ready" ? "Redeploy" : "Connect GPU"}
+              </button>
+              {!settings.modal_configured && (
+                <span className="muted"> — save a Modal token first</span>
+              )}
+            </div>
+          ))
+        ) : (
+          <p className="muted">...</p>
         )}
       </section>
 

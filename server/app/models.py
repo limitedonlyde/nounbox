@@ -227,6 +227,39 @@ class Job(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
+class GpuDeployment(Base):
+    """One deployed GPU recipe, keyed by the engine name that serves it.
+
+    Why a TABLE and not more columns on `settings`: the project has no
+    migrations — the schema is built by Base.metadata.create_all, which is
+    CREATE TABLE with checkfirst. A new table simply appears on the next
+    restart of an existing installation. A new COLUMN never appears, and since
+    the ORM selects every mapped column, the first settings read afterwards
+    would raise UndefinedColumn and take the whole instance down.
+
+    The engine name is the primary key because it is already the identity of
+    everything durable: the entry point, the settings catalog, and
+    Annotation.source["name"] on every box the engine produced.
+    """
+
+    __tablename__ = "gpu_deployments"
+
+    engine: Mapped[str] = mapped_column(String(50), primary_key=True)
+    app_name: Mapped[str] = mapped_column(String(64))
+    status: Mapped[GpuStatus] = mapped_column(
+        SAEnum(GpuStatus, native_enum=False, length=20),
+        default=GpuStatus.NOT_CONFIGURED,
+    )
+    endpoint_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Bearer token of this endpoint: generated at deploy time, otherwise anyone
+    # who learns the URL can use it on the account owner's bill
+    access_token_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+
 class InstanceSettings(Base):
     """Installation settings: a single row (user_id is reserved for multi-tenancy).
 
@@ -245,14 +278,17 @@ class InstanceSettings(Base):
     modal_token_secret_encrypted: Mapped[str | None] = mapped_column(
         Text, nullable=True
     )
+    # LEGACY: the four gpu_* columns below describe the modal_gpu (OCR) app and
+    # are now mirrored from its row in gpu_deployments. They are still written
+    # on every modal_gpu deploy so that rolling back to the previous image
+    # finds a working OCR endpoint. Drop them once Alembic lands; until then
+    # they cannot be removed — dropping a column needs a migration too.
     gpu_status: Mapped[GpuStatus] = mapped_column(
         SAEnum(GpuStatus, native_enum=False, length=20),
         default=GpuStatus.NOT_CONFIGURED,
     )
     gpu_endpoint_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     gpu_error: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # Bearer token of the deployed GPU endpoint: generated at deploy time,
-    # otherwise anyone who learns the URL can use it on the account owner's bill
     gpu_access_token_encrypted: Mapped[str | None] = mapped_column(
         Text, nullable=True
     )

@@ -30,6 +30,7 @@ from nounbox_sdk import Annotation, BBox, Capability
 DEFAULT_MODEL = "google/owlv2-base-patch16-ensemble"
 DEFAULT_SCORE_THRESHOLD = 0.25
 DEFAULT_NMS_IOU = 0.4
+# --- begin owlv2 post-processing (kept byte-identical in deploy/modal/owlv2_modal.py) ---
 # boxes thinner than this after clipping to the frame are junk from edge patches
 MIN_SIDE_PX = 2.0
 
@@ -80,6 +81,7 @@ def square_box_to_image(
     if x2 - x1 < MIN_SIDE_PX or y2 - y1 < MIN_SIDE_PX:
         return None
     return (x1, y1, x2, y2)
+# --- end owlv2 post-processing ---
 
 
 def to_annotations(detections: list[dict]) -> list[Annotation]:
@@ -144,7 +146,10 @@ class Owlv2Labeler:
             width, height = pil.size
             processor, model = self._load(model_name)
             inputs = processor(text=[classes], images=pil, return_tensors="pt")
-            outputs = model(**inputs)
+            # per call, not the one-time set_grad_enabled in _load: grad mode
+            # is thread-local, and predict runs in a threadpool
+            with torch.inference_mode():
+                outputs = model(**inputs)
 
         # logits: [patches, queries] — probability of EVERY class in EVERY box;
         # take every pair above the threshold, not the argmax over the queries

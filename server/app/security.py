@@ -4,7 +4,7 @@ their secrets.
 The platform has no real authentication yet — it is single-user and listens on
 localhost. But the settings endpoints are special: they take the Modal API
 token and start a deploy into the user's own Modal account. Anyone who reaches
-port (a port forward, a reverse proxy, a colleague on the same network) could
+the port (a port forward, a reverse proxy, a colleague on the same network) could
 spend that person's GPU budget. Hence a shared access token from the environment.
 
 APP_ACCESS_TOKEN empty (the default) — the endpoints stay open, as before, but

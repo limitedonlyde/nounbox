@@ -21,6 +21,10 @@ jobs:
           cache: pip
 
       - name: Install server and plugins
+        # -e for the server too, not just the plugins: modal_deploy.recipe_path()
+        # finds deploy/modal by walking up from app/services/modal_deploy.py, and
+        # a non-editable install puts that file in site-packages, where walking
+        # up leads nowhere near the recipes.
         # torch from the CPU wheel: the default one drags in gigabytes of CUDA,
         # and the engine tests never run the models (they are marked slow)
         run: |
@@ -28,7 +32,7 @@ jobs:
           pip install --index-url https://download.pytorch.org/whl/cpu "torch>=2.2"
           pip install -e ./sdk -e ./labelers/owlv2 -e ./labelers/llmdet \
             -e ./labelers/rapidocr -e ./labelers/vlm -e ./labelers/http \
-            -e ./labelers/consensus ./server
+            -e ./labelers/consensus -e ./server
           pip uninstall -y opencv-python opencv-contrib-python || true
           pip install "opencv-python-headless>=4.10"
           pip install pytest pytest-asyncio httpx aiosqlite
@@ -39,6 +43,12 @@ jobs:
 
       - name: Labeler tests
         run: pytest labelers -q -m "not slow"
+
+      - name: Recipe tests
+        # the recipes are deployed verbatim into the user's Modal account, and
+        # the detection one carries a copy of the CPU engine's box math — these
+        # tests are what keeps the copy honest
+        run: pip install modal && pytest deploy/modal/tests -q
 
   web:
     runs-on: ubuntu-latest

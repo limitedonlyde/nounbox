@@ -13,9 +13,18 @@ dependencies = [
     "httpx>=0.27",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
 [project.entry-points."nounbox.labelers"]
 http = "nounbox_labeler_http:HttpLabeler"
 modal_gpu = "nounbox_labeler_http:ModalGpuLabeler"
+modal_gpu_detect = "nounbox_labeler_http:ModalGpuDetectLabeler"
 
 [tool.setuptools.packages.find]
 include = ["nounbox_labeler_http*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

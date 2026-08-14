@@ -16,4 +16,5 @@ router = APIRouter(prefix="/labelers", tags=["labelers"])
 async def list_labelers(session: AsyncSession = Depends(get_session)):
     installed = await run_in_threadpool(load_labelers)
     row = await settings_store.get_row(session)
-    return settings_store.build_labelers(installed, row)
+    deployments = await settings_store.load_deployments(session)
+    return settings_store.build_labelers(installed, row, deployments)
