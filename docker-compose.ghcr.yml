@@ -7,7 +7,8 @@
 # image names have no capitals).
 #
 #   NOUNBOX_TAG pins the version (default: latest, which tracks main).
-#   Pinning a release is recommended: NOUNBOX_TAG=v0.2.0
+#   Pin a release once one is tagged: NOUNBOX_TAG=v0.3.0. None is tagged yet,
+#   so latest is currently the only thing to pull.
 #
 # NOTE: there are no database migrations yet — see the upgrade warning in the
 # README before moving between versions.
