@@ -68,8 +68,8 @@ times.*
 - **Boxes only.** No masks, no keypoints, no video.
 - **No migrations yet.** The schema is created on first start, so a version bump
   can require `docker compose down -v`, which deletes your annotations. Export
-  your dataset before upgrading. No release is tagged yet, so `latest` is all
-  there is — pin `NOUNBOX_TAG` once one exists.
+  your dataset before upgrading, and pin a release — `NOUNBOX_TAG=v0.1.0` in a
+  `.env` beside the compose file — so a `pull` cannot move you unexpectedly.
 
 ## Build from source instead
 

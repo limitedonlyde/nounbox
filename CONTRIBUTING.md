@@ -72,7 +72,7 @@ add a Modal recipe under `deploy/modal/` if you want a one-command deploy.
 Both are multi-arch (`linux/amd64`, `linux/arm64`). Tags:
 
 - push to `main` → `latest` and `sha-<short>`
-- tag `v0.2.0` → `0.2.0`, `0.2` and `sha-<short>` (`latest` stays on `main`)
+- tag `v0.2.0` → `v0.2.0`, `0.2.0`, `0.2` and `sha-<short>` (`latest` stays on `main`)
 
 Cutting a release is one command:
 
