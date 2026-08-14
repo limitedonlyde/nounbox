@@ -94,6 +94,33 @@ CATALOG.update(
     }
 )
 
+# Engines whose predict() spends its time waiting on another machine. The
+# labeling run may send images to these concurrently; a local engine already
+# occupies the worker's cores, and firing several at once would only make them
+# fight each other.
+#
+# Not derived from "requires": that says what the user must supply, and it puts
+# http and vlm (remote endpoints) in the same "config" bucket as consensus,
+# which runs its member engines in this very process — parallelizing consensus
+# would multiply whatever those engines are already doing.
+# Only the platform's own GPU recipes. vlm and http were here and should not
+# have been: their endpoint is whatever the user configured, and vlm's shipped
+# default is VLM_BASE_URL = http://host.docker.internal:11434/v1 — Ollama on the
+# very machine running the worker. Sending it four images at once would split
+# one local GPU's memory four ways, which is the opposite of the intent. For
+# those two engines "remote" is a property of a config the platform cannot see.
+REMOTE_ENGINES = frozenset(GPU_RECIPES)
+
+
+def is_remote(name: str) -> bool:
+    """Whether the engine's work happens on another machine.
+
+    An unknown engine (a third-party plugin) counts as local: assuming local is
+    merely slow, while assuming remote would let one plugin run several copies
+    of a model on the worker's own cores.
+    """
+    return name in REMOTE_ENGINES
+
 # MODAL_GPU_DETECT sits AFTER OWLV2: the first detection engine a user sees
 # must stay the CPU one that needs no account.
 ORDER = (

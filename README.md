@@ -222,10 +222,18 @@ Both ceilings are just the container count divided by the ~0.85 s an image
 actually takes, which is what you want to see — nothing else is in the way.
 Past saturation only latency grows.
 
-**None of that is reachable through the app yet.** A labeling run posts images
-to the engine one at a time, so what you get today is the 1.35 s per image, not
-the 682 per minute. The endpoint is already faster than the thing driving it;
-making the worker send concurrent requests is on the [roadmap](ROADMAP.md).
+A labeling run now keeps four images in flight against a remote engine
+(`REMOTE_LABELER_CONCURRENCY`), which is what `max_containers=4` in the recipe
+is sized for — raise the two together or the extra containers never wake.
+Measured end to end through the app, not against the bare endpoint: 79 photos
+went from 153 s to 70 s, 31 to 68 images a minute, same 94 annotations either
+way. That is short of the endpoint's own 296/min because each image still opens
+a fresh TLS connection to Modal; pooling them is the next thing to fix.
+
+Only the platform's own GPU engines are dispatched concurrently. The `vlm` and
+`http` engines point wherever you configured them — `vlm`'s default is Ollama on
+the same machine as the worker — and four concurrent requests to one local GPU
+would split its memory four ways rather than speed anything up.
 
 One finding worth reusing elsewhere: the stock
 `post_process_grounded_object_detection` in `transformers` keeps only the

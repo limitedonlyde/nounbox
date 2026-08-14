@@ -1,3 +1,4 @@
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -8,6 +9,18 @@ class Settings(BaseSettings):
         "postgresql+asyncpg://autolabel:autolabel@localhost:5432/autolabel"
     )
     redis_url: str = "redis://localhost:6379/0"
+
+    # How many images a labeling run may have in flight against a REMOTE engine
+    # at once (local engines always run one at a time — they already occupy the
+    # worker's cores). Measured against the Modal T4 recipe: its shipped
+    # max_containers=4 saturates at ~296 images/min, so sending more than a
+    # handful concurrently only grows latency. Keep this at or below the
+    # recipe's max_containers.
+    # Bounded on purpose: every in-flight image holds a thread from the pool
+    # that run_in_threadpool draws on (40 for the whole worker process), so an
+    # operator raising this to "as high as it goes" would starve ingest jobs
+    # running beside it.
+    remote_labeler_concurrency: int = Field(4, ge=1, le=16)
 
     s3_endpoint_url: str = "http://localhost:9000"
     # public endpoint for presigned URLs (the browser on the host opens them)

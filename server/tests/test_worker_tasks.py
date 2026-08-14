@@ -1,5 +1,7 @@
 """Worker: engine config resolution and the GPU deployment job."""
 
+import threading
+import time
 import uuid
 
 import nounbox_sdk
@@ -544,3 +546,399 @@ def test_each_recipe_is_imported_under_its_own_module_name():
     names = {modal_deploy._module_name(engine) for engine in GPU_RECIPES}
 
     assert len(names) == len(GPU_RECIPES)
+
+
+# --- concurrent dispatch to remote engines ---
+class ConcurrencyProbe:
+    """Records how many predict() calls were ever in flight at the same time.
+
+    predict runs in a threadpool, so the counter is guarded by a lock rather
+    than relying on the event loop for mutual exclusion.
+    """
+
+    version = "0.1.0"
+
+    def __init__(self, name: str, delay: float = 0.05) -> None:
+        self.name = name
+        self.delay = delay
+        self.peak = 0
+        self.calls = 0
+        self._in_flight = 0
+        self._lock = threading.Lock()
+
+    def predict(self, image: bytes, config: dict) -> list[SdkAnnotation]:
+        with self._lock:
+            self._in_flight += 1
+            self.calls += 1
+            self.peak = max(self.peak, self._in_flight)
+        try:
+            time.sleep(self.delay)
+            return []
+        finally:
+            with self._lock:
+                self._in_flight -= 1
+
+
+async def make_project_with_images(session_factory, count: int) -> uuid.UUID:
+    async with session_factory() as session:
+        project = Project(name="p", description="", task_type=TaskType.OCR)
+        session.add(project)
+        await session.flush()
+        document = Document(project_id=project.id, filename="a.png", s3_key="doc/a.png")
+        session.add(document)
+        await session.flush()
+        for index in range(count):
+            session.add(Image(document_id=document.id, s3_key=f"img/{index}.png"))
+        await session.commit()
+        return project.id
+
+
+async def test_remote_engine_gets_several_images_at_once(
+    session_factory, key_path, monkeypatch
+):
+    probe = ConcurrencyProbe("modal_gpu")
+    install(monkeypatch, probe)
+    monkeypatch.setattr(storage, "get_bytes", lambda key: b"png-bytes")
+    monkeypatch.setattr(tasks.settings, "remote_labeler_concurrency", 4)
+    project_id = await make_project_with_images(session_factory, 8)
+    await set_gpu(session_factory, GpuStatus.READY, ENDPOINT)
+    job_id = await enqueue_autolabel(session_factory, project_id, "modal_gpu")
+
+    await tasks.run_autolabel({}, job_id)
+
+    job = await get_job(session_factory, job_id)
+    assert job.status == JobStatus.DONE, job.result
+    assert probe.calls == 8
+    assert probe.peak > 1, "a remote engine must receive several images at once"
+    assert probe.peak <= 4, "and never more than the configured concurrency"
+
+
+async def test_local_engine_still_gets_one_image_at_a_time(
+    session_factory, key_path, monkeypatch
+):
+    """A CPU engine already occupies the worker's cores — overlapping calls
+    would make it slower, not faster, so the run must stay sequential."""
+    probe = ConcurrencyProbe("rapidocr")
+    install(monkeypatch, probe)
+    monkeypatch.setattr(storage, "get_bytes", lambda key: b"png-bytes")
+    monkeypatch.setattr(tasks.settings, "remote_labeler_concurrency", 4)
+    project_id = await make_project_with_images(session_factory, 6)
+    job_id = await enqueue_autolabel(session_factory, project_id, "rapidocr")
+
+    await tasks.run_autolabel({}, job_id)
+
+    assert probe.calls == 6
+    assert probe.peak == 1
+
+
+async def test_mixed_local_and_remote_run_stays_sequential(
+    session_factory, key_path, monkeypatch
+):
+    """The local engine would be the bottleneck anyway; running it several
+    times over would only slow the run down."""
+    remote = ConcurrencyProbe("modal_gpu")
+    local = ConcurrencyProbe("rapidocr")
+    install(monkeypatch, remote, local)
+    monkeypatch.setattr(storage, "get_bytes", lambda key: b"png-bytes")
+    monkeypatch.setattr(tasks.settings, "remote_labeler_concurrency", 4)
+    project_id = await make_project_with_images(session_factory, 6)
+    await set_gpu(session_factory, GpuStatus.READY, ENDPOINT)
+    job_id = await enqueue_autolabel(session_factory, project_id, None)
+
+    await tasks.run_autolabel({}, job_id)
+
+    assert remote.peak == 1
+    assert local.peak == 1
+
+
+class FailingOnOne:
+    """Fails on one image, works on the rest."""
+
+    version = "0.1.0"
+    name = "modal_gpu"
+
+    def __init__(self, fail_on: bytes, error: Exception) -> None:
+        self.fail_on = fail_on
+        self.error = error
+
+    def predict(self, image: bytes, config: dict) -> list[SdkAnnotation]:
+        if image == self.fail_on:
+            raise self.error
+        return [
+            SdkAnnotation(
+                geometry=[(1.0, 2.0), (3.0, 2.0), (3.0, 4.0), (1.0, 4.0)],
+                label="text_line",
+                confidence=0.9,
+            )
+        ]
+
+
+async def test_one_failing_image_does_not_take_down_the_concurrent_run(
+    session_factory, key_path, monkeypatch
+):
+    install(monkeypatch, FailingOnOne(b"bad", RuntimeError("boom")))
+
+    def get_bytes(key):
+        return b"bad" if key.endswith("2.png") else b"png-bytes"
+
+    monkeypatch.setattr(storage, "get_bytes", get_bytes)
+    monkeypatch.setattr(tasks.settings, "remote_labeler_concurrency", 4)
+    project_id = await make_project_with_images(session_factory, 6)
+    await set_gpu(session_factory, GpuStatus.READY, ENDPOINT)
+    job_id = await enqueue_autolabel(session_factory, project_id, "modal_gpu")
+
+    await tasks.run_autolabel({}, job_id)
+
+    job = await get_job(session_factory, job_id)
+    assert job.status == JobStatus.DONE, job.result
+    assert job.result["failed_images"] == 1
+    assert job.result["annotations_created"] == 5
+
+
+async def test_config_error_still_fails_the_whole_concurrent_run(
+    session_factory, key_path, monkeypatch
+):
+    """A ValueError means the same thing will happen to every remaining frame.
+    Concurrency must not turn that into 'one image failed' repeated N times."""
+    install(monkeypatch, FailingOnOne(b"png-bytes", ValueError("no classes")))
+    monkeypatch.setattr(storage, "get_bytes", lambda key: b"png-bytes")
+    monkeypatch.setattr(tasks.settings, "remote_labeler_concurrency", 4)
+    project_id = await make_project_with_images(session_factory, 8)
+    await set_gpu(session_factory, GpuStatus.READY, ENDPOINT)
+    job_id = await enqueue_autolabel(session_factory, project_id, "modal_gpu")
+
+    await tasks.run_autolabel({}, job_id)
+
+    job = await get_job(session_factory, job_id)
+    assert job.status == JobStatus.FAILED
+    assert "no classes" in job.result["error"]
+# --- appended to server/tests/test_worker_tasks.py ---
+
+
+class EchoingLabeler:
+    """Returns an annotation that names the bytes it was handed.
+
+    Every existing concurrency test hands each image the SAME bytes and gets
+    back the SAME annotation, so no assertion can tell which image a row came
+    from. This one makes every image's result unique, which is what makes the
+    image <-> result pairing checkable at all.
+    """
+
+    version = "0.1.0"
+    name = "modal_gpu"
+
+    def predict(self, image: bytes, config: dict) -> list[SdkAnnotation]:
+        return [
+            SdkAnnotation(
+                geometry=[(1.0, 2.0), (3.0, 2.0), (3.0, 4.0), (1.0, 4.0)],
+                label="text_line",
+                text=image.decode(),
+                confidence=0.9,
+            )
+        ]
+
+
+async def annotations_by_image(session_factory) -> dict[str, list[str]]:
+    """{image s3_key: [text of each annotation stored against it]}"""
+    async with session_factory() as session:
+        rows = (
+            await session.execute(
+                select(Image.s3_key, Annotation.text).join(
+                    Annotation, Annotation.image_id == Image.id
+                )
+            )
+        ).all()
+    out: dict[str, list[str]] = {}
+    for key, text in rows:
+        out.setdefault(key, []).append(text)
+    return out
+
+
+async def test_each_annotation_lands_on_the_image_it_was_predicted_from(
+    session_factory, key_path, monkeypatch
+):
+    """Concurrency must not cross the wires between images.
+
+    A window predicts N images at once and then applies the results to the
+    session. If the results are ever re-paired with the window by anything
+    other than position — completion order, a zip against a reordered list, a
+    shared `data` buffer — every count in job.result stays exactly right while
+    the boxes land on the wrong pages. The counters cannot see it; only the
+    image_id can.
+    """
+    install(monkeypatch, EchoingLabeler())
+    # each image gets bytes that identify it, so the annotation it produces
+    # can be traced back to the image it came from
+    monkeypatch.setattr(storage, "get_bytes", lambda key: key.encode())
+    monkeypatch.setattr(tasks.settings, "remote_labeler_concurrency", 4)
+    project_id = await make_project_with_images(session_factory, 10)
+    await set_gpu(session_factory, GpuStatus.READY, ENDPOINT)
+    job_id = await enqueue_autolabel(session_factory, project_id, "modal_gpu")
+
+    await tasks.run_autolabel({}, job_id)
+
+    job = await get_job(session_factory, job_id)
+    assert job.status == JobStatus.DONE, job.result
+    assert job.result["annotations_created"] == 10
+
+    stored = await annotations_by_image(session_factory)
+    assert stored == {f"img/{i}.png": [f"img/{i}.png"] for i in range(10)}
+
+
+class FailingOnKey:
+    """Raises for one image's bytes; succeeds on the rest. Counts its calls."""
+
+    version = "0.1.0"
+    name = "modal_gpu"
+
+    def __init__(self, fail_on: bytes, error: Exception) -> None:
+        self.fail_on = fail_on
+        self.error = error
+        self.calls = 0
+
+    def predict(self, image: bytes, config: dict) -> list[SdkAnnotation]:
+        self.calls += 1
+        if image == self.fail_on:
+            raise self.error
+        return [
+            SdkAnnotation(
+                geometry=[(1.0, 2.0), (3.0, 2.0), (3.0, 4.0), (1.0, 4.0)],
+                label="text_line",
+                confidence=0.9,
+            )
+        ]
+
+
+async def test_config_error_fails_the_job_even_when_the_window_had_successes(
+    session_factory, key_path, monkeypatch
+):
+    """The existing ValueError test fails EVERY image, so it cannot tell a
+    "config errors fail the job" rule from a "windows where nothing worked fail
+    the job" one. Here images 0-2 of the window succeed and image 3 raises: the
+    job must still fail, and must not keep spending frames afterwards.
+    """
+    labeler = FailingOnKey(b"img/3.png", ValueError("no classes"))
+    install(monkeypatch, labeler)
+    monkeypatch.setattr(storage, "get_bytes", lambda key: key.encode())
+    monkeypatch.setattr(tasks.settings, "remote_labeler_concurrency", 4)
+    project_id = await make_project_with_images(session_factory, 12)
+    await set_gpu(session_factory, GpuStatus.READY, ENDPOINT)
+    job_id = await enqueue_autolabel(session_factory, project_id, "modal_gpu")
+
+    await tasks.run_autolabel({}, job_id)
+
+    job = await get_job(session_factory, job_id)
+    assert job.status == JobStatus.FAILED, job.result
+    assert "no classes" in job.result["error"]
+    # a config error repeats on every frame: nothing past the window that hit
+    # it may be sent, or the run burns the whole project's quota on it
+    assert labeler.calls <= 4, f"kept labeling after a config error ({labeler.calls})"
+
+
+@pytest.mark.parametrize("knob", [2, 3])
+async def test_window_size_follows_the_configured_concurrency(
+    session_factory, key_path, monkeypatch, knob
+):
+    """Pinned to values that are NOT the default (4): setting the knob to its
+    own default proves only that some window exists, not that the setting is
+    read at all.
+    """
+    probe = ConcurrencyProbe("modal_gpu")
+    install(monkeypatch, probe)
+    monkeypatch.setattr(storage, "get_bytes", lambda key: b"png-bytes")
+    monkeypatch.setattr(tasks.settings, "remote_labeler_concurrency", knob)
+    project_id = await make_project_with_images(session_factory, 12)
+    await set_gpu(session_factory, GpuStatus.READY, ENDPOINT)
+    job_id = await enqueue_autolabel(session_factory, project_id, "modal_gpu")
+
+    await tasks.run_autolabel({}, job_id)
+
+    assert probe.calls == 12
+    assert probe.peak == knob
+
+
+class OrderRecorder:
+    """Records every (engine, image key) predict call, in order."""
+
+    version = "0.1.0"
+
+    def __init__(self, name: str, log: list, error: Exception | None = None) -> None:
+        self.name = name
+        self.log = log
+        self.error = error
+
+    def predict(self, image: bytes, config: dict) -> list[SdkAnnotation]:
+        self.log.append((self.name, image.decode()))
+        if self.error is not None:
+            raise self.error
+        return []
+
+
+async def test_config_error_stops_the_other_engines_on_that_image(
+    session_factory, key_path, monkeypatch
+):
+    """A ValueError fails the whole job, so nothing else on that image is worth
+    computing. The sequential loop raised immediately and never reached the
+    second engine; running it now would burn a billable GPU inference whose
+    result is thrown away."""
+    log: list = []
+    first = OrderRecorder("modal_gpu", log, ValueError("no classes"))
+    second = OrderRecorder("modal_gpu_detect", log)
+    install(monkeypatch, first, second)
+    monkeypatch.setattr(storage, "get_bytes", lambda key: key.encode())
+    monkeypatch.setattr(tasks.settings, "remote_labeler_concurrency", 1)
+    project_id = await make_project_with_images(session_factory, 3)
+    await set_gpu(session_factory, GpuStatus.READY, ENDPOINT)
+    await set_deployment(
+        session_factory, MODAL_GPU_DETECT, GpuStatus.READY, DETECT_ENDPOINT
+    )
+    job_id = await enqueue_autolabel(session_factory, project_id, None)
+
+    await tasks.run_autolabel({}, job_id)
+
+    job = await get_job(session_factory, job_id)
+    assert job.status == JobStatus.FAILED
+    assert log == [("modal_gpu", "img/0.png")], log
+
+
+async def test_failures_of_different_kinds_across_windows_are_all_counted(
+    session_factory, key_path, monkeypatch
+):
+    """The case windowing newly creates: several images failing differently, and
+    not all inside the first window."""
+    bad_fetch = "img/1.png"
+    bad_predict = {"img/2.png", "img/5.png"}  # one per window at concurrency 4
+
+    def get_bytes(key):
+        if key == bad_fetch:
+            raise RuntimeError("gone from S3")
+        return key.encode()
+
+    class Engine:
+        version = "0.1.0"
+        name = "modal_gpu"
+
+        def predict(self, image: bytes, config: dict) -> list[SdkAnnotation]:
+            if image.decode() in bad_predict:
+                raise RuntimeError("engine blew up")
+            return [
+                SdkAnnotation(
+                    geometry=[(1.0, 2.0), (3.0, 2.0), (3.0, 4.0), (1.0, 4.0)],
+                    label="text_line",
+                    confidence=0.9,
+                )
+            ]
+
+    install(monkeypatch, Engine())
+    monkeypatch.setattr(storage, "get_bytes", get_bytes)
+    monkeypatch.setattr(tasks.settings, "remote_labeler_concurrency", 4)
+    project_id = await make_project_with_images(session_factory, 8)
+    await set_gpu(session_factory, GpuStatus.READY, ENDPOINT)
+    job_id = await enqueue_autolabel(session_factory, project_id, "modal_gpu")
+
+    await tasks.run_autolabel({}, job_id)
+
+    job = await get_job(session_factory, job_id)
+    assert job.status == JobStatus.DONE, job.result
+    assert job.result["failed_images"] == 3
+    assert job.result["annotations_created"] == 5

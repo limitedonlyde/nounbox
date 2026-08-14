@@ -1,8 +1,10 @@
 """Background jobs (arq). Run with: arq app.workers.tasks.WorkerSettings"""
 
+import asyncio
 import json
 import logging
 import uuid
+from collections import deque
 from datetime import datetime, timezone
 
 from arq import func
@@ -60,6 +62,70 @@ def _iou(a: tuple, b: tuple) -> float:
 # above this overlap we treat the engine's box as one already reviewed
 REVIEWED_DUPLICATE_IOU = 0.7
 
+# marker for "this engine has already labeled this image" — distinguishable from
+# both a predictions list and an exception, which is what else can come back
+_ALREADY_LABELED = object()
+
+
+async def _predict_image(image, labelers: dict, configs: dict, labeled: dict):
+    """Fetch one image and run every engine on it. Touches no database session.
+
+    That restriction is the point of the function. It is run concurrently for
+    several images, and a SQLAlchemy session is not safe to share between tasks
+    — so everything that writes (session.add, the counters, the job result)
+    stays in the caller, which consumes these results one at a time.
+
+    Nothing is raised: a failure is returned as the exception object, because
+    the caller has to tell the two kinds apart. A ValueError means a config
+    error that will repeat on every remaining frame and must fail the job;
+    anything else costs one image.
+    """
+    outcomes: list = []
+    try:
+        try:
+            data = await run_in_threadpool(storage.get_bytes, image.s3_key)
+        except Exception as exc:
+            return image, exc, []
+
+        for labeler in labelers.values():
+            if image.id in labeled[labeler.name]:
+                outcomes.append((labeler, _ALREADY_LABELED))
+                continue
+            try:
+                predictions = await run_in_threadpool(
+                    labeler.predict, data, configs[labeler.name]
+                )
+            except ValueError as exc:
+                # This aborts the whole job, so stop working on this image at
+                # once — the old sequential loop raised here and never reached
+                # the next engine. Without the break the remaining engines run
+                # a full inference whose result is discarded microseconds later,
+                # and on a GPU engine that is billable work after the job has
+                # already been decided.
+                outcomes.append((labeler, exc))
+                break
+            except Exception as exc:
+                outcomes.append((labeler, exc))
+                continue
+            outcomes.append((labeler, predictions))
+    except Exception as exc:  # the promise above, made structural
+        return image, exc, outcomes
+    return image, None, outcomes
+
+
+def _image_concurrency(labelers: dict) -> int:
+    """How many images to have in flight at once.
+
+    One, unless every engine in the run waits on another machine. A mixed run
+    stays sequential on purpose: the local engine would be the bottleneck
+    anyway, and running several copies of it at once makes it slower, not
+    faster.
+    """
+    if not labelers or not all(
+        settings_store.is_remote(name) for name in labelers
+    ):
+        return 1
+    return max(1, settings.remote_labeler_concurrency)
 
 
 async def run_autolabel(ctx: dict, job_id: str) -> None:
@@ -236,83 +302,122 @@ async def run_autolabel(ctx: dict, job_id: str) -> None:
                 labeled[name] = set() if rerun else set(rows)
 
             created, skipped, failed, duplicates = 0, 0, 0, 0
-            for image in images:
-                try:
-                    data = await run_in_threadpool(storage.get_bytes, image.s3_key)
-                except Exception:
-                    # broken row (file missing from S3) — don't kill the whole job
-                    logger.exception("Failed to fetch image %s", image.id)
-                    failed += 1
-                    continue
-                for labeler in labelers.values():
-                    if image.id in labeled[labeler.name]:
-                        skipped += 1
-                        continue
-                    try:
-                        predictions = await run_in_threadpool(
-                            labeler.predict, data, configs[labeler.name]
-                        )
-                    except ValueError as exc:
-                        # a config error (no classes, too many of them for the
-                        # engine, a wrong model) is the same for every frame:
-                        # staying quiet means the job "succeeds" labeling nothing
-                        raise RuntimeError(f"{labeler.name}: {exc}") from exc
-                    except Exception:
-                        logger.exception(
-                            "Labeler %s failed on image %s", labeler.name, image.id
+            # A rolling window, not a barrier: `concurrency` predictions stay in
+            # flight, and each completed one is applied before the next starts.
+            # Batching in fixed groups would idle the remote engine for the tail
+            # of every group while the slowest image finished.
+            #
+            # Results are consumed in image order on purpose. It costs nothing —
+            # the tasks run regardless — and it keeps an annotation provably
+            # attached to the image it was predicted from.
+            concurrency = _image_concurrency(labelers)
+            semaphore = asyncio.Semaphore(concurrency)
+
+            async def predict(image):
+                async with semaphore:
+                    return await _predict_image(image, labelers, configs, labeled)
+
+            pending: deque = deque()
+            queued = 0
+            while queued < len(images) and len(pending) < concurrency:
+                pending.append(asyncio.create_task(predict(images[queued])))
+                queued += 1
+
+            applied = 0
+            try:
+                while pending:
+                    image, fetch_error, outcomes = await pending.popleft()
+                    if queued < len(images):
+                        pending.append(asyncio.create_task(predict(images[queued])))
+                        queued += 1
+                    applied += 1
+                    # bound the identity map on a run of thousands of images;
+                    # the single commit still happens in the finally below
+                    if applied % 50 == 0:
+                        await session.flush()
+                    if fetch_error is not None:
+                        # broken row (file missing from S3) — don't kill the whole job
+                        logger.error(
+                            "Failed to fetch image %s", image.id, exc_info=fetch_error
                         )
                         failed += 1
                         continue
-                    source = {
-                        "type": "engine",
-                        "name": labeler.name,
-                        "version": labeler.version,
-                    }
-                    checked = reviewed.get(image.id, [])
-                    for pred in predictions:
-                        geom = pred.geometry
-                        if checked:
-                            box = _as_xyxy(
-                                {
+                    for labeler, outcome in outcomes:
+                        if outcome is _ALREADY_LABELED:
+                            skipped += 1
+                            continue
+                        if isinstance(outcome, ValueError):
+                            # a config error (no classes, too many of them for the
+                            # engine, a wrong model) is the same for every frame:
+                            # staying quiet means the job "succeeds" labeling nothing
+                            raise RuntimeError(
+                                f"{labeler.name}: {outcome}"
+                            ) from outcome
+                        if isinstance(outcome, Exception):
+                            logger.error(
+                                "Labeler %s failed on image %s",
+                                labeler.name,
+                                image.id,
+                                exc_info=outcome,
+                            )
+                            failed += 1
+                            continue
+                        predictions = outcome
+                        source = {
+                            "type": "engine",
+                            "name": labeler.name,
+                            "version": labeler.version,
+                        }
+                        checked = reviewed.get(image.id, [])
+                        for pred in predictions:
+                            geom = pred.geometry
+                            if checked:
+                                box = _as_xyxy(
+                                    {
+                                        "type": "bbox",
+                                        "x": geom.x,
+                                        "y": geom.y,
+                                        "width": geom.width,
+                                        "height": geom.height,
+                                    }
+                                    if hasattr(geom, "width")
+                                    else {"type": "polygon", "points": [list(p) for p in geom]}
+                                )
+                                if box is not None and any(
+                                    label == pred.label
+                                    and _iou(box, other) >= REVIEWED_DUPLICATE_IOU
+                                    for label, other in checked
+                                ):
+                                    # already reviewed by a human — don't push it again
+                                    duplicates += 1
+                                    continue
+                            if hasattr(geom, "width"):  # BBox dataclass
+                                geometry = {
                                     "type": "bbox",
                                     "x": geom.x,
                                     "y": geom.y,
                                     "width": geom.width,
                                     "height": geom.height,
                                 }
-                                if hasattr(geom, "width")
-                                else {"type": "polygon", "points": [list(p) for p in geom]}
+                            else:  # Polygon
+                                geometry = {"type": "polygon", "points": [list(p) for p in geom]}
+                            session.add(
+                                Annotation(
+                                    image_id=image.id,
+                                    geometry=geometry,
+                                    label=pred.label,
+                                    text=pred.text,
+                                    attrs=pred.attrs,
+                                    confidence=pred.confidence,
+                                    source=source,
+                                )
                             )
-                            if box is not None and any(
-                                label == pred.label
-                                and _iou(box, other) >= REVIEWED_DUPLICATE_IOU
-                                for label, other in checked
-                            ):
-                                # already reviewed by a human — don't push it again
-                                duplicates += 1
-                                continue
-                        if hasattr(geom, "width"):  # BBox dataclass
-                            geometry = {
-                                "type": "bbox",
-                                "x": geom.x,
-                                "y": geom.y,
-                                "width": geom.width,
-                                "height": geom.height,
-                            }
-                        else:  # Polygon
-                            geometry = {"type": "polygon", "points": [list(p) for p in geom]}
-                        session.add(
-                            Annotation(
-                                image_id=image.id,
-                                geometry=geometry,
-                                label=pred.label,
-                                text=pred.text,
-                                attrs=pred.attrs,
-                                confidence=pred.confidence,
-                                source=source,
-                            )
-                        )
-                        created += 1
+                            created += 1
+            finally:
+                # a config error aborts the run — stop the predictions already
+                # in flight instead of paying for results nobody will read
+                for task in pending:
+                    task.cancel()
 
             job.status = JobStatus.DONE
             job.result = {
@@ -614,3 +719,11 @@ class WorkerSettings:
         func(run_deploy_gpu, timeout=3600, max_tries=1),
     ]
     redis_settings = RedisSettings.from_dsn(settings.redis_url)
+
+    # Explicit, because the labeling run is no longer single-threaded. Every
+    # image in flight holds a thread from the pool run_in_threadpool draws on —
+    # 40 for the whole process — and arq's own default of 10 concurrent jobs
+    # times remote_labeler_concurrency would reach exactly that, leaving an
+    # ingest job (minutes of rasterizing a PDF) waiting for a labeling thread.
+    # Four labeling jobs at the shipped concurrency of 4 use 16 of the 40.
+    max_jobs = 4
